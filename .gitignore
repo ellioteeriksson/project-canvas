@@ -1,0 +1,5 @@
+node_modules/
+app/node_modules/
+.DS_Store
+*.log
+# app/dist is committed on purpose so the plugin runs without an install step

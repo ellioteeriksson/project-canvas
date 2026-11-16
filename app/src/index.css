@@ -1,0 +1,121 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Drafting-table theme. Highlighter yellow = "scoped" (what Claude will edit). */
+:root {
+  --radius: 0.5rem;
+  --background: #ffffff;
+  --foreground: #1c2230;
+  --card: #ffffff;
+  --card-foreground: #1c2230;
+  --popover: #ffffff;
+  --popover-foreground: #1c2230;
+  --primary: #1c2230;
+  --primary-foreground: #ffffff;
+  --secondary: #eef1f5;
+  --secondary-foreground: #1c2230;
+  --muted: #eef1f5;
+  --muted-foreground: #5b6578;
+  --accent: #eef1f5;
+  --accent-foreground: #1c2230;
+  --destructive: #c4302b;
+  --border: #dde2e9;
+  --input: #c9d1db;
+  --ring: #2f5bd3;
+  --paper: #e9edf1;
+  --paper-dot: #c4ccd6;
+  --wire: #8d98a8;
+  --scope: #ffd23f;
+  --scope-ink: #1c2230;
+  --link: #2f5bd3;
+  --ok: #1f8a4c;
+}
+.dark {
+  --background: #181c25;
+  --foreground: #e7eaf0;
+  --card: #1e232e;
+  --card-foreground: #e7eaf0;
+  --popover: #1e232e;
+  --popover-foreground: #e7eaf0;
+  --primary: #e7eaf0;
+  --primary-foreground: #181c25;
+  --secondary: #262c38;
+  --secondary-foreground: #e7eaf0;
+  --muted: #262c38;
+  --muted-foreground: #9aa4b6;
+  --accent: #2b3240;
+  --accent-foreground: #e7eaf0;
+  --destructive: #ef5f58;
+  --border: #2d3442;
+  --input: #3a4252;
+  --ring: #7d9cf0;
+  --paper: #11141b;
+  --paper-dot: #2a303c;
+  --wire: #5f6a7d;
+  --scope: #ffd23f;
+  --scope-ink: #ffd23f;
+  --link: #7d9cf0;
+  --ok: #4cc27f;
+}
+
+@theme inline {
+  --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --radius-sm: calc(var(--radius) - 3px);
+  --radius-md: calc(var(--radius) - 1px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-paper: var(--paper);
+  --color-paper-dot: var(--paper-dot);
+  --color-wire: var(--wire);
+  --color-scope: var(--scope);
+  --color-scope-ink: var(--scope-ink);
+  --color-link: var(--link);
+  --color-ok: var(--ok);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-size: 13px;
+    line-height: 1.45;
+    font-feature-settings: "ss02";
+  }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+}
+
+/* React Flow overrides */
+.react-flow { --xy-background-color: var(--paper); --xy-edge-stroke: var(--wire); --xy-edge-stroke-width: 1.5; --xy-attribution-background-color: transparent; }
+.react-flow__node { cursor: default; }
+.react-flow__node:focus-visible { outline: none; }
+.react-flow__node:focus-visible .frame-card { outline: 2px solid var(--ring); outline-offset: 3px; }
+.react-flow__edge-text { font-family: var(--font-sans); font-size: 11px; fill: var(--foreground); }
+.react-flow__edge-textbg { fill: var(--background); }
+.react-flow__minimap { background: var(--background); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.react-flow__handle { opacity: 0; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

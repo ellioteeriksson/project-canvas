@@ -1,0 +1,14 @@
+{
+  "name": "project-canvas",
+  "description": "Project Canvas: a live sitemap / user-flow canvas for web projects in Claude Code.",
+  "owner": {
+    "name": "Elliot Eriksson"
+  },
+  "plugins": [
+    {
+      "name": "project-canvas",
+      "source": "./",
+      "description": "Live design canvas for any web project, with view-scoped prompting and one-click PRs."
+    }
+  ]
+}
