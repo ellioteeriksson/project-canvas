@@ -1,23 +1,63 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Browser, DeviceMobile, FolderSimple, CursorClick, LinkBreak, WarningCircle } from "@phosphor-icons/react";
+import { Browser, DeviceMobile, FolderSimple, CursorClick, LinkBreak, WarningCircle, CircleNotch, Warning } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { frameUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCanvas } from "./context";
-import { frameSize, TITLE_H, type FrameData, type GroupData } from "./layout";
+import { frameSize, pageHeight, TITLE_H, type FrameData, type GroupData } from "./layout";
+import { useLoadSlot, releaseSlot } from "@/lib/load-queue";
+
+const STATUS_TEXT: Record<number, string> = {
+  0: "Dev server didn't answer",
+  401: "401 · Needs sign-in",
+  403: "403 · Forbidden",
+  404: "404 · This route doesn't exist on the dev server",
+  500: "500 · The page crashed on the server. Open it to see the error",
+};
 import { EditableName } from "./editable-name";
 
 export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetPosition }: NodeProps) {
   const { viewId } = data as FrameData;
   const c = useCanvas();
   const v = c.manifest.views.find((x) => x.id === viewId);
+  const selected = c.selectedId === viewId;
+  const interactive = c.interactiveId === viewId;
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const wantsLive = !!v?.url && c.devUp !== false && (c.showLive || interactive);
+  const granted = useLoadSlot(viewId, selected ? 10 : 0, wantsLive, c.reloadKey);
+  const { full, reportHeight } = c;
+
+  useEffect(() => { setLoaded(false); setPageError(null); }, [c.reloadKey, v?.url]);
+
+  // Messages from the helper script injected into the page
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (!iframeRef.current || e.source !== iframeRef.current.contentWindow) return;
+      const d = e.data;
+      if (!d || d.source !== "project-canvas") return;
+      if (d.type === "ready") iframeRef.current.contentWindow?.postMessage({ source: "project-canvas-host", type: "fullpage", on: full }, "*");
+      if (d.type === "height" && full) reportHeight(viewId, d.h);
+      if (d.type === "error") setPageError(d.message);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [viewId, full, reportHeight]);
+
+  useEffect(() => {
+    iframeRef.current?.contentWindow?.postMessage({ source: "project-canvas-host", type: "fullpage", on: full }, "*");
+  }, [full, loaded]);
+
   if (!v) return null;
   const f = frameSize(c.device);
-  const selected = c.selectedId === v.id;
-  const interactive = c.interactiveId === v.id;
+  const pageH = full ? pageHeight(c.device, c.heights[viewId]) : f.vh;
+  const cardH = Math.round(pageH * f.scale);
   const Icon = c.device === "mobile" ? DeviceMobile : Browser;
+  const st = v.url ? c.frames[v.url] ?? c.frames[v.url + "/"] : undefined;
+  const failed = st && (st.status === 0 || st.status >= 400) ? st : null;
 
   return (
     <div className="group/frame relative" style={{ width: f.w, paddingTop: TITLE_H }}>
@@ -56,11 +96,24 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
           interactive && "ring-0 shadow-[0_0_0_calc(3px*var(--title-scale,1))_var(--link)]",
           interactive && "nodrag nopan nowheel",
         )}
-        style={{ width: f.w, height: f.h }}
+        style={{ width: f.w, height: cardH }}
         onClick={(e) => { if (!interactive) { e.stopPropagation(); c.select(v.id); } }}
         onDoubleClick={(e) => { e.stopPropagation(); if (v.url) c.setInteractive(v.id); }}
       >
         {renderBody()}
+        {wantsLive && !loaded && (
+          <div style={{ fontSize: "calc(12px * min(var(--title-scale, 1), 2.4))" }} className="pointer-events-none absolute inset-x-0 top-0 flex h-[min(100%,225px)] items-center justify-center gap-1.5 text-muted-foreground">
+            <CircleNotch size={14} className="animate-spin" /> {granted ? "Loading…" : "Waiting to load"}
+          </div>
+        )}
+        {(failed || pageError) && (
+          <div role="status" style={{ fontSize: "calc(11px * min(var(--title-scale, 1), 2.4))" }} className={cn("absolute inset-x-0 bottom-0 flex items-start gap-1.5 px-2 py-1.5 leading-snug text-white", failed ? "bg-destructive" : "bg-[#b7791f]")}>
+            <Warning size={13} weight="fill" className="mt-px shrink-0" />
+            <span className="line-clamp-2">
+              {failed ? STATUS_TEXT[failed.status] ?? `${failed.status} · The dev server returned an error` : `Error in page: ${pageError}`}
+            </span>
+          </div>
+        )}
         {interactive && (
           <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-link px-2.5 py-1 text-[11px] font-medium text-white shadow">
             Interacting · Esc to exit
@@ -87,15 +140,17 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
         </Placeholder>
       );
     if (!c.showLive && !interactive) return <Placeholder name={v.name} big />;
+    if (!granted) return <Placeholder name={v.name} big />;
     return (
       <iframe
+        ref={iframeRef}
         key={c.reloadKey}
         title={`${v.name} preview`}
-        src={frameUrl(c.manifest.devUrl, v.url)}
-        loading="lazy"
+        src={frameUrl(c.frameBase, v.url)}
         tabIndex={interactive ? 0 : -1}
-        className="absolute top-0 left-0 origin-top-left border-0 bg-white"
-        style={{ width: f.vw, height: f.vh, transform: `scale(${f.scale})`, pointerEvents: interactive ? "auto" : "none" }}
+        onLoad={() => { setLoaded(true); releaseSlot(viewId); }}
+        className={cn("absolute top-0 left-0 origin-top-left border-0 bg-white transition-opacity", loaded ? "opacity-100" : "opacity-0")}
+        style={{ width: f.vw, height: pageH, transform: `scale(${f.scale})`, pointerEvents: interactive ? "auto" : "none" }}
       />
     );
   }

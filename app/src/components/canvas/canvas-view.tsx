@@ -3,8 +3,9 @@ import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant, MiniMap, Panel,
   useReactFlow, useViewport, useNodesState, type Node, type NodeMouseHandler,
 } from "@xyflow/react";
-import { TreeStructure, FlowArrow, Desktop, DeviceMobile, LinkBreak, Copy, Check } from "@phosphor-icons/react";
-import type { Manifest } from "@/lib/types";
+import { TreeStructure, FlowArrow, Desktop, DeviceMobile, LinkBreak, Copy, Check, Rectangle, ArrowsVertical } from "@phosphor-icons/react";
+import type { Manifest, FrameStatus } from "@/lib/types";
+import { setLoadLimit } from "@/lib/load-queue";
 import { api, useDevServer } from "@/lib/api";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -26,6 +27,7 @@ type Props = {
   manifest: Manifest;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  frames: FrameStatus;
   ref?: Ref<CanvasHandle>;
 };
 
@@ -37,12 +39,31 @@ export function CanvasView(props: Props) {
   );
 }
 
-function CanvasInner({ manifest, selectedId, onSelect, ref }: Props) {
+function CanvasInner({ manifest, selectedId, onSelect, frames, ref }: Props) {
   const rf = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
   const mode = manifest.mode;
   const device = manifest.viewport;
-  const graph = useMemo(() => buildGraph(manifest, mode, device), [manifest, mode, device]);
+  const full = manifest.frameHeight === "full";
+  // Measured page heights arrive one by one; apply them in batches so the layout doesn't jitter
+  const [heights, setHeights] = useState<Record<string, number>>({});
+  const pendingHeights = useRef<Record<string, number>>({});
+  const heightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fitAfterHeights = useRef(false);
+  const reportHeight = useCallback((id: string, h: number) => {
+    pendingHeights.current[id] = h;
+    if (heightTimer.current) clearTimeout(heightTimer.current);
+    heightTimer.current = setTimeout(() => {
+      const batch = pendingHeights.current;
+      pendingHeights.current = {};
+      setHeights((prev) => {
+        const changed = Object.entries(batch).some(([k, v]) => Math.abs((prev[k] ?? 0) - v) > 4);
+        return changed ? { ...prev, ...batch } : prev;
+      });
+    }, 350);
+  }, []);
+  useEffect(() => setLoadLimit(manifest.frameConcurrency || 3), [manifest.frameConcurrency]);
+  const graph = useMemo(() => buildGraph(manifest, mode, device, full ? heights : null), [manifest, mode, device, full, heights]);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(graph.nodes);
   const [interactiveId, setInteractive] = useState<string | null>(null);
   const [showLive, setShowLive] = useState(true);
@@ -96,7 +117,7 @@ function CanvasInner({ manifest, selectedId, onSelect, ref }: Props) {
   }, [rf, focus]);
 
   // Refit when the layout itself changes (mode/device/view count), not on every rescan
-  const layoutKey = `${mode}|${device}|${manifest.views.length}`;
+  const layoutKey = `${mode}|${device}|${manifest.views.length}|${manifest.frameHeight}`;
   const lastLayout = useRef("");
   const fitRef = useRef(fitAll);
   fitRef.current = fitAll;
@@ -104,8 +125,16 @@ function CanvasInner({ manifest, selectedId, onSelect, ref }: Props) {
     if (lastLayout.current === layoutKey) return;
     const first = lastLayout.current === "";
     lastLayout.current = layoutKey;
+    fitAfterHeights.current = full;
     setTimeout(() => fitRef.current(first ? 0 : 400), first ? 30 : 80);
-  }, [layoutKey]);
+  }, [layoutKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After switching to full-page frames, refit once the first page heights are in
+  useEffect(() => {
+    if (!full || !fitAfterHeights.current || !Object.keys(heights).length) return;
+    fitAfterHeights.current = false;
+    setTimeout(() => fitRef.current(400), 60);
+  }, [heights, full]);
 
   useImperativeHandle(ref, () => ({ fitAll: () => fitAll(), zoomToCenter, focus }), [fitAll, zoomToCenter, focus]);
 
@@ -123,6 +152,8 @@ function CanvasInner({ manifest, selectedId, onSelect, ref }: Props) {
 
   const ctx: CanvasCtx = {
     manifest, device, selectedId, interactiveId, showLive, devUp, reloadKey,
+    full, heights, frames, reportHeight,
+    frameBase: manifest.frameUrl || manifest.devUrl,
     select: onSelect,
     setInteractive,
     rename: (id, name) => api.config({ names: { [id]: name } }),
@@ -201,6 +232,10 @@ function CanvasToolbar({ manifest }: { manifest: Manifest }) {
       <ToggleGroup type="single" value={manifest.mode} onValueChange={(v) => v && api.config({ mode: v })} aria-label="Layout">
         <ToggleGroupItem value="sitemap" aria-label="Sitemap layout"><TreeStructure size={14} /> Sitemap</ToggleGroupItem>
         <ToggleGroupItem value="flow" aria-label="Flow layout"><FlowArrow size={14} /> Flow</ToggleGroupItem>
+      </ToggleGroup>
+      <ToggleGroup type="single" value={manifest.frameHeight} onValueChange={(v) => v && api.config({ frameHeight: v })} aria-label="Frame height">
+        <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="viewport" aria-label="Show one screen of each page"><Rectangle size={14} /> Screen</ToggleGroupItem></TooltipTrigger><TooltipContent>First screen of each page</TooltipContent></Tooltip>
+        <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="full" aria-label="Show full pages"><ArrowsVertical size={14} /> Full page</ToggleGroupItem></TooltipTrigger><TooltipContent>Every page at its full length</TooltipContent></Tooltip>
       </ToggleGroup>
       <ToggleGroup type="single" value={manifest.viewport} onValueChange={(v) => v && api.config({ viewport: v })} aria-label="Frame size">
         <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="desktop" aria-label="Desktop frames"><Desktop size={14} /></ToggleGroupItem></TooltipTrigger><TooltipContent>Desktop · 1440</TooltipContent></Tooltip>

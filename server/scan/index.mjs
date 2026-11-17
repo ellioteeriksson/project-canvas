@@ -164,6 +164,8 @@ export function scanProject(root, config = loadConfig(root)) {
     viewport: config.viewport || "desktop",
     previewRoute: config.previewRoute || null,
     positions: config.positions || {},
+    frameHeight: config.frameHeight === "full" ? "full" : "viewport",
+    frameConcurrency: Math.max(1, Math.min(12, Number(config.frameConcurrency) || 3)),
     views,
     groups: [...groups.values()],
     edges: { tree: treeEdges, links: [...linkEdges.values()] },

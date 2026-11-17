@@ -17,7 +17,7 @@ import { SettingsPopover } from "@/components/settings-popover";
 type Tab = "canvas" | "design";
 
 export default function App() {
-  const { manifest, state, git, connected, refreshGit, setState } = useCanvasData();
+  const { manifest, state, git, connected, refreshGit, setState, frames } = useCanvasData();
   const [tab, setTab] = useState<Tab>("canvas");
   const [dsSection, setDsSection] = useState<DsSection>("tokens");
   const [sidebar, setSidebar] = useState(true);
@@ -120,7 +120,7 @@ export default function App() {
           </aside>
           <main className="relative min-w-0 flex-1 bg-paper">
             {tab === "canvas" ? (
-              <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} />
+              <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} />
             ) : (
               <DesignSystemView manifest={manifest} section={dsSection} selectedId={selectedId} onSelect={select} onOpenView={openView} />
             )}

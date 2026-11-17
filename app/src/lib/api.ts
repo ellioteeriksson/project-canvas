@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import type { Manifest, CanvasState, GitStatus, ShipAction, ShipResult } from "./types";
+import type { Manifest, CanvasState, GitStatus, ShipAction, ShipResult, FrameStatus } from "./types";
 
 async function post<T = unknown>(url: string, body: unknown): Promise<T> {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -20,6 +20,7 @@ export function useCanvasData() {
   const [state, setState] = useState<CanvasState>({});
   const [git, setGit] = useState<GitStatus | null>(null);
   const [connected, setConnected] = useState(false);
+  const [frames, setFrames] = useState<FrameStatus>({});
 
   useEffect(() => {
     let es: EventSource | null = null;
@@ -31,13 +32,14 @@ export function useCanvasData() {
       es.addEventListener("manifest", (e) => setManifest(JSON.parse((e as MessageEvent).data)));
       es.addEventListener("state", (e) => setState(JSON.parse((e as MessageEvent).data)));
       es.addEventListener("git", (e) => setGit(JSON.parse((e as MessageEvent).data)));
+      es.addEventListener("frames", (e) => setFrames(JSON.parse((e as MessageEvent).data)));
     };
     connect();
     return () => { clearTimeout(retry); es?.close(); };
   }, []);
 
   const refreshGit = useCallback(async () => setGit(await (await fetch("/api/git/status")).json()), []);
-  return { manifest, state, git, connected, refreshGit, setState };
+  return { manifest, state, git, connected, refreshGit, setState, frames };
 }
 
 /** Checks whether the project's dev server answers. */

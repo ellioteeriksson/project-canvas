@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { scanProject, writeManifest, loadConfig, saveConfig, CANVAS_DIR } from "./scan/index.mjs";
 import { IGNORE_DIRS } from "./scan/fsutil.mjs";
 import { gitStatus, ship, aiMessage, heuristicMessage } from "./git.mjs";
+import { createFrameProxy, serveHelper, HELPER_TAG } from "./proxy.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(HERE, "..", "app", "dist");
@@ -44,10 +45,14 @@ function pidAlive(pid) {
 let manifest = null;
 let lastSig = "";
 let siteUrl = null; // static server for plain-HTML projects
+let proxyUrl = null; // frame proxy in front of the dev server
+const frameStatus = {}; // path -> { status, ms, error } for the last page load seen by the proxy
 function rescan(reason = "") {
   try {
     const m = scanProject(ROOT);
     if (m.devUrl === "/__site" && siteUrl) m.devUrl = siteUrl;
+    // Frames load through the proxy (or the static server for plain HTML) unless turned off
+    m.frameUrl = m.devUrl === siteUrl ? siteUrl : loadConfig(ROOT).proxy === false || !proxyUrl ? m.devUrl : proxyUrl;
     const sig = JSON.stringify({ ...m, scannedAt: 0, scanMs: 0 });
     manifest = m;
     if (sig !== lastSig) {
@@ -157,6 +162,7 @@ async function handle(req, res) {
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
     res.write(`event: manifest\ndata: ${JSON.stringify(manifest)}\n\n`);
     res.write(`event: state\ndata: ${JSON.stringify(readState())}\n\n`);
+    res.write(`event: frames\ndata: ${JSON.stringify(frameStatus)}\n\n`);
     clients.add(res);
     const ping = setInterval(() => res.write(": ping\n\n"), 20_000);
     req.on("close", () => { clients.delete(res); clearInterval(ping); });
@@ -208,6 +214,13 @@ async function handle(req, res) {
   return serveFile(res, file, path.join(DIST, "index.html"));
 }
 
+let statusTimer = null;
+function recordStatus({ path: p, status, ms, error }) {
+  frameStatus[p] = { status, ms, error, at: Date.now() };
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => broadcast("frames", frameStatus), 150);
+}
+
 /* ---------------- boot ---------------- */
 function freePort(start) {
   return new Promise((resolve) => {
@@ -225,8 +238,13 @@ async function main() {
   if (!fs.existsSync(ROOT)) { console.error(`[canvas] project not found: ${ROOT}`); process.exit(1); }
   const prev = readState();
   if (prev.pid && prev.pid !== process.pid && pidAlive(prev.pid) && prev.url) {
-    console.log(`[canvas] already running for this project → ${prev.url}`);
-    process.exit(0);
+    // A live pid isn't enough (pids get reused): ask the server itself
+    const running = await fetch(`${prev.url}/api/state`, { signal: AbortSignal.timeout(1200) })
+      .then((r) => r.json()).then((st) => st.root === ROOT).catch(() => false);
+    if (running) {
+      console.log(`[canvas] already running for this project → ${prev.url}`);
+      process.exit(0);
+    }
   }
   if (!fs.existsSync(path.join(DIST, "index.html"))) {
     console.error("[canvas] UI build missing. Run: npm --prefix \"" + path.resolve(HERE, "..", "app") + "\" install && npm --prefix \"" + path.resolve(HERE, "..", "app") + "\" run build");
@@ -238,12 +256,29 @@ async function main() {
   if (probe.devUrl === "/__site") {
     const sitePort = await freePort(port + 1);
     http.createServer((req, res) => {
+      if (serveHelper(req, res)) return;
       const u = new URL(req.url, "http://localhost");
-      const file = safeJoin(ROOT, u.pathname);
+      let file = safeJoin(ROOT, u.pathname);
       if (!file || file.includes(`${path.sep}${CANVAS_DIR}`)) return send(res, 403, "forbidden", "text/plain");
+      if (fs.existsSync(file) && fs.statSync(file).isDirectory()) {
+        if (!u.pathname.endsWith("/")) { res.writeHead(301, { Location: u.pathname + "/" }); return res.end(); }
+        file = path.join(file, "index.html");
+      }
+      if (/\.html?$/i.test(file) && fs.existsSync(file)) {
+        const html = fs.readFileSync(file, "utf8");
+        const m = html.match(/<head\b[^>]*>/i);
+        const out = m ? html.slice(0, m.index + m[0].length) + HELPER_TAG + html.slice(m.index + m[0].length) : HELPER_TAG + html;
+        recordStatus({ path: u.pathname, status: 200, ms: 0 });
+        return send(res, 200, out, "text/html; charset=utf-8");
+      }
+      if (/\.html?$/i.test(file)) recordStatus({ path: u.pathname, status: 404, ms: 0 });
       serveFile(res, file, null, u.pathname);
     }).listen(sitePort, "127.0.0.1");
     siteUrl = `http://localhost:${sitePort}`;
+  } else {
+    const proxyPort = await freePort(port + 2);
+    createFrameProxy({ getTarget: () => manifest?.devUrl || probe.devUrl, onStatus: recordStatus }).listen(proxyPort, "127.0.0.1");
+    proxyUrl = `http://localhost:${proxyPort}`;
   }
   rescan();
   const server = http.createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { error: String(e?.message || e) })));

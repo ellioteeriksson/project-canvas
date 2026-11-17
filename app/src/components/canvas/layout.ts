@@ -7,6 +7,13 @@ export const DEVICES = {
   mobile: { vw: 390, vh: 844, w: 180 },
 } as const;
 export const TITLE_H = 30;
+/** Tallest full-page frame, in page pixels (keeps giant pages from swallowing the canvas). */
+export const MAX_PAGE_H = 16000;
+
+/** Height of a frame's page in page pixels: the measured full height, or one viewport. */
+export function pageHeight(device: keyof typeof DEVICES, measured?: number) {
+  return measured ? Math.min(Math.max(measured, DEVICES[device].vh), MAX_PAGE_H) : DEVICES[device].vh;
+}
 export const GROUP = { w: 180, h: 40 };
 
 export function frameSize(device: keyof typeof DEVICES) {
@@ -18,7 +25,7 @@ export function frameSize(device: keyof typeof DEVICES) {
 export type FrameData = { kind: "frame"; viewId: string };
 export type GroupData = { kind: "group"; groupId: string };
 
-export function buildGraph(m: Manifest, mode: "sitemap" | "flow", device: keyof typeof DEVICES) {
+export function buildGraph(m: Manifest, mode: "sitemap" | "flow", device: keyof typeof DEVICES, heights?: Record<string, number> | null) {
   const f = frameSize(device);
   const g = new dagre.graphlib.Graph();
   const sitemap = mode === "sitemap";
@@ -27,8 +34,9 @@ export function buildGraph(m: Manifest, mode: "sitemap" | "flow", device: keyof 
 
   const nodes: RFNode[] = [];
   for (const v of m.views) {
-    g.setNode(v.id, { width: f.w, height: f.h + TITLE_H });
-    nodes.push({ id: v.id, type: "frame", position: { x: 0, y: 0 }, data: { kind: "frame", viewId: v.id } satisfies FrameData, width: f.w, height: f.h + TITLE_H });
+    const h = Math.round(pageHeight(device, heights?.[v.id]) * f.scale) + TITLE_H;
+    g.setNode(v.id, { width: f.w, height: h });
+    nodes.push({ id: v.id, type: "frame", position: { x: 0, y: 0 }, data: { kind: "frame", viewId: v.id } satisfies FrameData, width: f.w, height: h });
   }
   if (sitemap) for (const gr of m.groups) {
     g.setNode(gr.id, { width: GROUP.w, height: GROUP.h });
@@ -61,9 +69,16 @@ export function buildGraph(m: Manifest, mode: "sitemap" | "flow", device: keyof 
   dagre.layout(g);
 
   const saved = m.positions?.[mode] || {};
+  // Sitemap: frames in the same row share a centre line; align their tops instead (like Figma)
+  const rowMax = new Map<number, number>();
+  if (sitemap) for (const n of nodes) {
+    const p = g.node(n.id);
+    rowMax.set(Math.round(p.y), Math.max(rowMax.get(Math.round(p.y)) ?? 0, n.height as number));
+  }
   for (const n of nodes) {
     const p = g.node(n.id);
-    n.position = saved[n.id] ?? { x: p.x - (n.width as number) / 2, y: p.y - (n.height as number) / 2 };
+    const top = sitemap ? p.y - (rowMax.get(Math.round(p.y)) as number) / 2 : p.y - (n.height as number) / 2;
+    n.position = saved[n.id] ?? { x: p.x - (n.width as number) / 2, y: top };
     n.sourcePosition = sitemap ? Position.Bottom : Position.Right;
     n.targetPosition = sitemap ? Position.Top : Position.Left;
   }

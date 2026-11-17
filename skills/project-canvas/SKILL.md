@@ -40,6 +40,9 @@ The server watches the project and rescans on every save. **Edit `config.json` a
   "framework": "auto",                       // next | react-router | tanstack | astro | html | auto
   "devUrl": "http://localhost:3000",         // where frames load from
   "viewport": "desktop",                     // desktop | mobile frames
+  "frameHeight": "viewport",                 // "viewport" (one screen) | "full" (every page at full length)
+  "frameConcurrency": 3,                     // how many frames load at once (dev servers compile routes on demand)
+  "proxy": true,                             // false = load frames straight from devUrl instead of through the frame proxy
   "names": { "/": "Home", "/pricing": "Pricing" },        // display names by route
   "params": { "/blog/[slug]": "/blog/hello-world" },     // sample URLs for dynamic routes
   "views": [{ "route": "/checkout/success", "file": "src/Success.tsx", "name": "Order confirmed" }], // add views the scanner can't see
@@ -63,6 +66,15 @@ Always **merge** into `config.json`. Read it, change the keys you need, and writ
 5. **Dynamic routes:** for each view with `url: null`, find a real example (seed data, fixtures, a CMS) and add it to `params`.
 6. **Dev server:** frames need it running. If `devUrl` doesn't answer, tell the user the exact command (`npm run dev`). Don't start long-running servers without asking. Plain HTML projects are served by the canvas itself.
 7. Suggest committing `.canvas/config.json` (the server already gitignores `state.json` and `manifest.json`).
+
+## How frames load (for debugging blank or broken frames)
+
+- Frames don't load `devUrl` directly. They go through a **frame proxy** on the next free port after the canvas (`manifest.frameUrl`). The proxy strips `X-Frame-Options` and CSP `frame-ancestors`, passes hot-reload websockets through, and injects a small helper (`/__canvas_frame.js`). Nothing in the project changes.
+- The helper reports each page's full height (for **Full page** mode) and freezes `vh`/`svh`/`dvh` units at one screen, so `100vh` heroes keep their real size. It also reports runtime errors, which show as an amber bar on the frame.
+- Each frame shows the HTTP status the proxy saw: a red bar for 404, 500, or an unreachable dev server. A 404 usually means the route needs a sample URL (`params`) or the scanner picked up a route that doesn't exist (`hidden`).
+- Frames load a few at a time (`frameConcurrency`) so Next.js doesn't have to compile every route at once.
+- Plain HTML projects are served by the canvas's own static server, with the same helper.
+- If a page uses JavaScript to size itself from `window.innerHeight`, full-page mode can't freeze that. Say so if a frame looks stretched.
 
 ## Detection details (for debugging an empty or wrong canvas)
 

@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { Manifest } from "@/lib/types";
+import type { Manifest, FrameStatus } from "@/lib/types";
 
 export type CanvasCtx = {
   manifest: Manifest;
@@ -9,6 +9,11 @@ export type CanvasCtx = {
   showLive: boolean;
   devUp: boolean | null;
   reloadKey: number;
+  full: boolean;
+  heights: Record<string, number>;
+  frames: FrameStatus;
+  frameBase: string;
+  reportHeight: (id: string, h: number) => void;
   select: (id: string | null) => void;
   setInteractive: (id: string | null) => void;
   rename: (id: string, name: string) => void;

@@ -9,7 +9,8 @@ export type Component = { id: string; name: string; file: string; group: "primit
 export type Manifest = {
   project: { name: string; root: string; framework: string };
   mode: "sitemap" | "flow"; modeSource: "auto" | "config";
-  devUrl: string; viewport: "desktop" | "mobile"; previewRoute: string | null;
+  devUrl: string; frameUrl?: string; viewport: "desktop" | "mobile"; previewRoute: string | null;
+  frameHeight: "viewport" | "full"; frameConcurrency: number;
   positions: Partial<Record<"sitemap" | "flow", Record<string, { x: number; y: number }>>>;
   views: View[]; groups: Group[]; edges: { tree: Edge[]; links: Edge[] };
   designSystem: { tokens: Token[]; fonts: string[]; components: Component[]; cssFiles: string[] };
@@ -25,3 +26,4 @@ export type GitStatus = {
 };
 export type ShipAction = "commit" | "push" | "pr";
 export type ShipResult = { ok: boolean; steps: { cmd: string; ok: boolean; out: string }[]; branch?: string; prUrl?: string | null; error?: string };
+export type FrameStatus = Record<string, { status: number; ms?: number; error?: string; at: number }>;
