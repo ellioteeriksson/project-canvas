@@ -163,7 +163,8 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, ref }: Props) {
   const onNodeClick: NodeMouseHandler = (_, n) => { if (n.type === "frame") onSelect(n.id); };
   const onNodeDragStop = () => {
     const positions = Object.fromEntries(rf.getNodes().map((n) => [n.id, { x: Math.round(n.position.x), y: Math.round(n.position.y) }]));
-    api.config({ positions: { ...manifest.positions, [mode]: positions } });
+    // Full-page and screen-height arrangements are saved separately
+    api.config({ positions: { ...manifest.positions, [full ? `${mode}-full` : mode]: positions } });
   };
 
   return (

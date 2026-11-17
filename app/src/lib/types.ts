@@ -11,7 +11,7 @@ export type Manifest = {
   mode: "sitemap" | "flow"; modeSource: "auto" | "config";
   devUrl: string; frameUrl?: string; viewport: "desktop" | "mobile"; previewRoute: string | null;
   frameHeight: "viewport" | "full"; frameConcurrency: number;
-  positions: Partial<Record<"sitemap" | "flow", Record<string, { x: number; y: number }>>>;
+  positions: Partial<Record<"sitemap" | "flow" | "sitemap-full" | "flow-full", Record<string, { x: number; y: number }>>>;
   views: View[]; groups: Group[]; edges: { tree: Edge[]; links: Edge[] };
   designSystem: { tokens: Token[]; fonts: string[]; components: Component[]; cssFiles: string[] };
   scannedAt: string;

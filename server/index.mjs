@@ -24,6 +24,7 @@ const args = Object.fromEntries(
   }, []),
 );
 const ROOT = path.resolve(args.project || process.cwd());
+const VERSION = JSON.parse(fs.readFileSync(path.resolve(HERE, "..", ".claude-plugin", "plugin.json"), "utf8")).version;
 const STATE_FILE = path.join(ROOT, CANVAS_DIR, "state.json");
 
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".avif": "image/avif", ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".ico": "image/x-icon", ".mp4": "video/mp4", ".webm": "video/webm", ".txt": "text/plain" };
@@ -170,7 +171,7 @@ async function handle(req, res) {
     return;
   }
   if (p === "/api/manifest") return send(res, 200, manifest);
-  if (p === "/api/state") return send(res, 200, readState());
+  if (p === "/api/state") return send(res, 200, { ...readState(), version: VERSION });
 
   if (p === "/api/selection" && req.method === "POST") {
     const body = await readBody(req);
@@ -240,17 +241,27 @@ async function main() {
   if (prev.pid && prev.pid !== process.pid && pidAlive(prev.pid) && prev.url) {
     // A live pid isn't enough (pids get reused): ask the server itself
     const running = await fetch(`${prev.url}/api/state`, { signal: AbortSignal.timeout(1200) })
-      .then((r) => r.json()).then((st) => st.root === ROOT).catch(() => false);
-    if (running) {
+      .then((r) => r.json()).then((st) => (st.root === ROOT ? st : null)).catch(() => null);
+    if (running && running.version === VERSION) {
       console.log(`[canvas] already running for this project → ${prev.url}`);
       process.exit(0);
+    }
+    if (running) {
+      // An older version is still serving this project: replace it so updates take effect
+      console.log(`[canvas] replacing canvas server ${running.version || "0.1.x"} (pid ${prev.pid}) with ${VERSION}`);
+      try { process.kill(prev.pid, "SIGTERM"); } catch {}
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        const still = await fetch(`${prev.url}/api/state`, { signal: AbortSignal.timeout(300) }).then(() => true).catch(() => false);
+        if (!still) break;
+      }
     }
   }
   if (!fs.existsSync(path.join(DIST, "index.html"))) {
     console.error("[canvas] UI build missing. Run: npm --prefix \"" + path.resolve(HERE, "..", "app") + "\" install && npm --prefix \"" + path.resolve(HERE, "..", "app") + "\" run build");
     process.exit(1);
   }
-  const port = await freePort(Number(args.port) || 4777);
+  const port = await freePort(Number(args.port) || prev.port || 4777);
   // Plain HTML projects get their own static origin so root-relative links work inside frames
   const probe = scanProject(ROOT);
   if (probe.devUrl === "/__site") {
@@ -284,8 +295,8 @@ async function main() {
   const server = http.createServer((req, res) => handle(req, res).catch((e) => send(res, 500, { error: String(e?.message || e) })));
   server.listen(port, "127.0.0.1", () => {
     const url = `http://localhost:${port}`;
-    writeState({ pid: process.pid, port, url, root: ROOT, selection: prev.selection ? selectionRecord(prev.selection) : null });
-    console.log(`[canvas] ${manifest.project.name} (${manifest.project.framework}, ${manifest.mode}) · ${manifest.views.length} views`);
+    writeState({ pid: process.pid, port, url, root: ROOT, version: VERSION, selection: prev.selection ? selectionRecord(prev.selection) : null });
+    console.log(`[canvas] v${VERSION} · ${manifest.project.name} (${manifest.project.framework}, ${manifest.mode}) · ${manifest.views.length} views`);
     console.log(`[canvas] open ${url}`);
     if (args.open) {
       const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";

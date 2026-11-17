@@ -83,6 +83,43 @@ export function buildGraph(m: Manifest, mode: "sitemap" | "flow", device: keyof 
     n.targetPosition = sitemap ? Position.Top : Position.Left;
   }
 
+  // Full-page frames are much taller than the screen-height ones the user arranged by hand.
+  // Keep their arrangement but re-space it: rows (sitemap) or columns (flow) are stacked by
+  // their tallest frame. Positions dragged in full-page mode are kept as they are.
+  if (heights && Object.keys(saved).length) {
+    const fullSaved = m.positions?.[`${mode}-full`] || {};
+    const arranged = nodes.filter((n) => saved[n.id] && !fullSaved[n.id]);
+    const GAP = sitemap ? 96 : 72;
+    if (sitemap) {
+      const rows = new Map<number, RFNode[]>();
+      for (const n of arranged) {
+        const key = Math.round(saved[n.id].y / 40);
+        rows.set(key, [...(rows.get(key) ?? []), n]);
+      }
+      let cursor = Math.min(...arranged.map((n) => saved[n.id].y));
+      for (const key of [...rows.keys()].sort((a, b) => a - b)) {
+        const row = rows.get(key)!;
+        for (const n of row) n.position = { x: saved[n.id].x, y: cursor };
+        cursor += Math.max(...row.map((n) => n.height as number)) + GAP;
+      }
+    } else {
+      const cols = new Map<number, RFNode[]>();
+      for (const n of arranged) {
+        const key = Math.round(saved[n.id].x / 40);
+        cols.set(key, [...(cols.get(key) ?? []), n]);
+      }
+      for (const col of cols.values()) {
+        col.sort((a, b) => saved[a.id].y - saved[b.id].y);
+        let cursor = saved[col[0].id].y;
+        for (const n of col) { n.position = { x: saved[n.id].x, y: cursor }; cursor += (n.height as number) + GAP; }
+      }
+    }
+    for (const n of nodes) if (fullSaved[n.id]) n.position = fullSaved[n.id];
+  } else if (heights) {
+    const fullSaved = m.positions?.[`${mode}-full`] || {};
+    for (const n of nodes) if (fullSaved[n.id]) n.position = fullSaved[n.id];
+  }
+
   // Merge reciprocal links (A→B and B→A) into one two-headed connector
   const edges: RFEdge[] = [];
   const seen = new Set<string>();

@@ -50,7 +50,7 @@ export function SettingsPopover({ manifest }: { manifest: Manifest }) {
         <Separator />
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => api.rescan()}><ArrowsClockwise size={14} /> Rescan project</Button>
-          <Button variant="outline" size="sm" onClick={() => api.config({ positions: { ...manifest.positions, [manifest.mode]: {} } })}>
+          <Button variant="outline" size="sm" onClick={() => api.config({ positions: { ...manifest.positions, [manifest.mode]: {}, [`${manifest.mode}-full`]: {} } })}>
             <ArrowCounterClockwise size={14} /> Reset layout
           </Button>
         </div>
