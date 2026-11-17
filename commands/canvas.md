@@ -11,4 +11,5 @@ Open the Project Canvas for the project in `$ARGUMENTS` (default: the current wo
 3. Otherwise start the server **in the background** (it keeps running while you work):
    `node "<plugin root>/server/index.mjs" --project "<project>" --open`
    Wait a second, then read the URL from its output or from `.canvas/state.json` and give it to the user.
+   In the Claude desktop app's Code tab, leave out `--open` and open the URL in the **Browser pane** instead, so the canvas sits next to the chat.
 4. If this is the first time (there's no `.canvas/config.json`), follow the **First connection** checklist in the `project-canvas` skill. Then reply with a short summary: framework, website or product, number of views, and anything the user needs to fix, like a dev server that isn't running or dynamic routes that need sample URLs.
