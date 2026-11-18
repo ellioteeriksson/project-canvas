@@ -12,17 +12,11 @@ Built with shadcn/ui (Radix), Phosphor icons, React Flow and Tailwind v4. The se
 
 ## Install
 
-You need Node 20 or newer. For pull requests, you also need the GitHub CLI (`gh auth login`).
+See **[INSTALL.md](INSTALL.md)**. In short: put the folder somewhere permanent, then run
 
 ```bash
-# 1. Put the folder somewhere permanent, e.g. ~/claude-plugins/project-canvas
-# 2. In Claude Code:
-/plugin marketplace add ~/claude-plugins/project-canvas
-/plugin install project-canvas@project-canvas
-# restart Claude Code
+claude plugin marketplace add ~/claude-plugins/project-canvas && claude plugin install project-canvas@project-canvas
 ```
-
-To try it without installing: `claude --plugin-dir ~/claude-plugins/project-canvas`
 
 ## Use it on an existing project
 
