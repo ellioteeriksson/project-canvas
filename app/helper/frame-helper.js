@@ -182,7 +182,7 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
   }
 
   /* ---------- Sections ---------- */
-  const SKIP_COMPONENT = /^(Fragment|Suspense|Section|Container|Box|Wrapper|Div|Main|Layout|RootLayout|Root|Provider|.*Provider|.*Boundary|AnimatePresence|Motion.*|Link|LinkComponent|Image|Img|.*Router|.*Handler|ClientPageRoot|ClientSegmentRoot|RenderFromTemplateContext|HTTPAccessFallback.*|Redirect.*|LoadingBoundary|Slot|Page|.*Page|App)$/;
+  const SKIP_COMPONENT = /^(SegmentViewNode|SegmentViewStateNode|.*Segment.*|ScrollAndFocusHandler|InnerScrollAndFocusHandler|HotReload|ReactDevOverlay|AppRouter|ServerRoot|Head|Html|Body|Fragment|Suspense|Section|Container|Box|Wrapper|Div|Main|Layout|RootLayout|Root|Provider|.*Provider|.*Boundary|AnimatePresence|Motion.*|Link|LinkComponent|Image|Img|.*Router|.*Handler|ClientPageRoot|ClientSegmentRoot|RenderFromTemplateContext|HTTPAccessFallback.*|Redirect.*|LoadingBoundary|Slot|Page|.*Page|App)$/;
   function componentName(el) {
     const k = Object.keys(el).find((x) => x.startsWith("__reactFiber$"));
     let f = k ? el[k] : null;
@@ -239,6 +239,134 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     return out.slice(0, 60);
   }
 
+  /* ---------- Element picking ---------- */
+  let picking = false;
+  let hoverEl = null;
+  let chosen = [];
+  const layer = () => {
+    let l = document.getElementById("pc-pick-layer");
+    if (!l) {
+      l = document.createElement("div");
+      l.id = "pc-pick-layer";
+      l.setAttribute("data-project-canvas", "");
+      l.style.cssText = "position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none;";
+      document.body.appendChild(l);
+    }
+    return l;
+  };
+  const box = (el, cls, label) => {
+    const r = el.getBoundingClientRect();
+    const b = document.createElement("div");
+    b.className = cls;
+    b.style.cssText = `position:absolute;left:${r.left + scrollX}px;top:${r.top + scrollY}px;width:${r.width}px;height:${r.height}px;box-sizing:border-box;pointer-events:none;` +
+      (cls === "pc-hover" ? "outline:2px solid #0d99ff;background:rgba(13,153,255,.08);" : "outline:2px solid #0d99ff;background:rgba(13,153,255,.16);");
+    if (label) {
+      const t = document.createElement("div");
+      t.textContent = label;
+      t.style.cssText = "position:absolute;left:-2px;bottom:100%;margin-bottom:2px;background:#0d99ff;color:#fff;font:500 11px/1.4 ui-sans-serif,system-ui,sans-serif;padding:1px 6px;border-radius:3px;white-space:nowrap;max-width:420px;overflow:hidden;text-overflow:ellipsis;";
+      if (r.top < 22) { t.style.bottom = "auto"; t.style.top = "100%"; t.style.marginTop = "2px"; }
+      b.appendChild(t);
+    }
+    return b;
+  };
+  function kindOf(el) {
+    const t = el.tagName;
+    if (t === "BUTTON" || el.getAttribute("role") === "button" || (t === "INPUT" && /submit|button/.test(el.type))) return "button";
+    if (t === "A") return "link";
+    if (/^H[1-6]$/.test(t)) return "heading";
+    if (/^(IMG|PICTURE|SVG|VIDEO|CANVAS|svg)$/.test(t)) return "image";
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(t)) return "field";
+    if (/^(SECTION|HEADER|FOOTER|NAV|MAIN|ARTICLE|ASIDE)$/.test(t) || el.hasAttribute("data-section")) return "section";
+    if (/^(P|SPAN|LI|LABEL|BLOCKQUOTE|STRONG|EM|SMALL|FIGCAPTION|DT|DD)$/.test(t)) return "text";
+    return "block";
+  }
+  function cssPath(el) {
+    const parts = [];
+    while (el && el.nodeType === 1 && el !== document.body && parts.length < 6) {
+      let s = el.tagName.toLowerCase();
+      if (el.id) { parts.unshift(`${s}#${CSS.escape(el.id)}`); break; }
+      const cls = [...el.classList].filter((c) => !/^(css-|sc-|jsx-|_)|[0-9a-f]{5,}|__/.test(c)).slice(0, 2);
+      if (cls.length) s += "." + cls.map((c) => CSS.escape(c)).join(".");
+      const sib = el.parentElement ? [...el.parentElement.children].filter((x) => x.tagName === el.tagName) : [];
+      if (sib.length > 1) s += `:nth-of-type(${sib.indexOf(el) + 1})`;
+      parts.unshift(s);
+      el = el.parentElement;
+    }
+    return parts.join(" > ");
+  }
+  function sectionOf(el) {
+    const s = el.closest("section, header, footer, nav, [data-section]");
+    if (!s) return null;
+    const heading = s.querySelector("h1, h2, h3")?.textContent?.replace(/\s+/g, " ").trim().slice(0, 60);
+    return s.getAttribute("data-section") || s.getAttribute("aria-label") || (s.id ? humanize(s.id) : null) || heading ||
+      ({ HEADER: "Header", FOOTER: "Footer", NAV: "Navigation" })[s.tagName] || null;
+  }
+  function describe(el) {
+    const r = el.getBoundingClientRect();
+    const text = (el.innerText || el.getAttribute("alt") || el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("title") || "")
+      .replace(/\s+/g, " ").trim().slice(0, 140);
+    return {
+      kind: kindOf(el), tag: el.tagName.toLowerCase(), id: el.id || null, selector: cssPath(el), text: text || null,
+      href: el.getAttribute("href"), component: componentName(el), section: sectionOf(el),
+      top: Math.round(r.top + scrollY), left: Math.round(r.left + scrollX), width: Math.round(r.width), height: Math.round(r.height),
+      html: el.outerHTML.replace(/\s+/g, " ").slice(0, 280),
+    };
+  }
+  const labelFor = (el) => {
+    const k = kindOf(el);
+    const t = (el.innerText || el.getAttribute("alt") || el.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim().slice(0, 40);
+    return `${k}${el.id ? " #" + el.id : ""}${t ? " · " + t : ""}`;
+  };
+  function drawPick() {
+    const l = layer();
+    l.replaceChildren(...chosen.filter((c) => c.isConnected).map((c, i) => box(c, "pc-chosen", `${i + 1}`)), ...(hoverEl ? [box(hoverEl, "pc-hover", labelFor(hoverEl))] : []));
+  }
+  const ignore = (el) => !el || el === document.documentElement || el === document.body || el.closest?.("[data-project-canvas]");
+  function onMove(e) {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (ignore(el) || el === hoverEl) return;
+    hoverEl = el;
+    drawPick();
+  }
+  function onClick(e) {
+    if (!picking) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    if (e.type !== "click" || ignore(hoverEl)) return;
+    const add = e.shiftKey || e.metaKey || e.ctrlKey;
+    if (add) chosen = chosen.includes(hoverEl) ? chosen.filter((c) => c !== hoverEl) : [...chosen, hoverEl];
+    else chosen = [hoverEl];
+    drawPick();
+    post({ type: "picked", elements: chosen.map(describe) });
+  }
+  function onKey(e) {
+    if (!picking) return;
+    if (e.key === "Escape") { e.preventDefault(); post({ type: "pick-done" }); }
+    if (e.key === "ArrowUp" && hoverEl?.parentElement && !ignore(hoverEl.parentElement)) { e.preventDefault(); hoverEl = hoverEl.parentElement; drawPick(); }
+    if (e.key === "ArrowDown" && hoverEl?.firstElementChild) { e.preventDefault(); hoverEl = hoverEl.firstElementChild; drawPick(); }
+  }
+  const BLOCK = ["click", "mousedown", "mouseup", "pointerdown", "pointerup", "submit", "dblclick", "contextmenu"];
+  function setPicking(on, selectors) {
+    if (on === picking) return;
+    picking = on;
+    if (on) {
+      chosen = (selectors || []).map((s) => { try { return document.querySelector(s); } catch { return null; } }).filter(Boolean);
+      addEventListener("mousemove", onMove, true);
+      BLOCK.forEach((t) => addEventListener(t, onClick, true));
+      addEventListener("keydown", onKey, true);
+      document.documentElement.style.cursor = "crosshair";
+      drawPick();
+    } else {
+      removeEventListener("mousemove", onMove, true);
+      BLOCK.forEach((t) => removeEventListener(t, onClick, true));
+      removeEventListener("keydown", onKey, true);
+      document.documentElement.style.cursor = "";
+      hoverEl = null;
+      document.getElementById("pc-pick-layer")?.remove();
+    }
+  }
+
   let snapping = false;
   async function snapshot(id, maxW) {
     if (snapping) return;
@@ -278,15 +406,23 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     }
   }
 
+  // Change the page only after the framework has hydrated it; earlier changes cause hydration errors
+  const afterHydration = (fn) => {
+    const go = () => setTimeout(fn, 250);
+    if (document.readyState === "complete") go();
+    else window.addEventListener("load", go, { once: true });
+  };
+
   window.addEventListener("message", (e) => {
     const d = e.data;
     if (!d || d.source !== "project-canvas-host") return;
     if (d.type === "snapshot") snapshot(d.id, d.maxW);
     if (d.type === "fullpage") {
-      if (d.on) enableFull();
+      if (d.on) afterHydration(enableFull);
       else { full = false; lastH = 0; }
     }
-    if (d.type === "wireframe") setWire(!!d.on);
+    if (d.type === "wireframe") { if (d.on || wire) afterHydration(() => setWire(!!d.on)); }
+    if (d.type === "pick") afterHydration(() => setPicking(!!d.on, d.selectors));
     // The canvas asks after an agent edit: did the page update itself (hot reload) since then?
     if (d.type === "query-mutation") post({ type: "mutation", at: lastMutation, id: d.id });
   });

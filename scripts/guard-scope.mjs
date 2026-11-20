@@ -20,7 +20,7 @@ if (own.has(rel)) process.exit(0);
 
 // New files created next to the selected view's page are part of that view
 const isNew = !fs.existsSync(abs);
-if ((sel.kind === "view" || sel.kind === "section") && isNew && sel.file && path.posix.dirname(rel) === path.posix.dirname(sel.file)) process.exit(0);
+if ((sel.kind === "view" || sel.kind === "section" || sel.kind === "elements") && isNew && sel.file && path.posix.dirname(rel) === path.posix.dirname(sel.file)) process.exit(0);
 
 const shared = (sel.sharedFiles || []).includes(rel);
 const reason = shared

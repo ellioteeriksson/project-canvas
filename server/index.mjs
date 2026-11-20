@@ -81,6 +81,29 @@ function selectionRecord(sel) {
     if (!c) return null;
     return { kind: "component", id: c.id, name: c.name, file: c.file, files: [c.file], usedBy: c.usedBy };
   }
+  if (sel.kind === "elements") {
+    const v = manifest.views.find((x) => x.id === sel.viewId);
+    const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    // Pair each element with the section component it sits in (server components have no client-side name)
+    const elements = (Array.isArray(sel.elements) ? sel.elements.slice(0, 20) : []).map((e) => {
+      const known = (v?.codeSections || []).find((c) => norm(c.name) === norm(e.component));
+      const bySection = (v?.codeSections || []).find((c) => e.section && (norm(e.section).includes(norm(c.name)) || norm(c.name).includes(norm(e.section))));
+      const code = known || bySection;
+      return code ? { ...e, component: code.name, componentFile: code.file } : e;
+    });
+    if (!v || !elements.length) return null;
+    // Component files for elements whose component the scanner knows (design-system components)
+    const compFiles = elements
+      .map((e) => manifest.designSystem.components.find((c) => c.name === e.component || c.exports?.includes(e.component))?.file)
+      .filter(Boolean);
+    const codeFiles = elements.map((e) => e.componentFile).filter(Boolean);
+    return {
+      kind: "elements", id: `${v.id}::elements`, viewId: v.id, viewName: v.name, route: v.route, url: v.url,
+      name: elements.length === 1 ? `${elements[0].kind}${elements[0].text ? ` “${elements[0].text.slice(0, 30)}”` : ""}` : `${elements.length} elements`,
+      file: v.file, files: [...new Set([v.file, ...codeFiles, ...compFiles, ...(v.files || [])].filter(Boolean))], sharedFiles: v.sharedFiles,
+      elements,
+    };
+  }
   if (sel.kind === "section") {
     const [viewId, idx] = String(sel.id).split("::");
     const v = manifest.views.find((x) => x.id === viewId);

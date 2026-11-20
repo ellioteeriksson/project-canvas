@@ -21,6 +21,7 @@ export type Manifest = {
 export type Selection =
   | { kind: "view"; id: string; name: string; route: string; url: string | null; file: string | null; files: string[]; sharedFiles: string[] }
   | { kind: "component"; id: string; name: string; file: string; files: string[]; usedBy: string[] }
+  | { kind: "elements"; id: string; name: string; viewId: string; viewName: string; route: string; elements: PickedElement[] }
   | { kind: "section"; id: string; name: string; viewId: string; viewName: string; route: string; component: string | null; componentFile: string | null; position: { index: number; of: number; top: number; height: number } };
 export type CanvasState = { pid?: number | null; url?: string; selection?: Selection | null; updatedAt?: string };
 export type GitStatus = {
@@ -39,3 +40,7 @@ export type EditEvent = { file: string | null; views: string[]; global: boolean;
 export type PageSection = { name: string; heading: string | null; tag: string; id: string | null; component: string | null; top: number; height: number };
 export type Snapshot = { file: string; at: number; h: number; w: number; sections?: PageSection[] };
 export type SnapshotIndex = Record<string, Snapshot>;
+export type PickedElement = {
+  kind: string; tag: string; id: string | null; selector: string; text: string | null; href: string | null;
+  component: string | null; section: string | null; top: number; left: number; width: number; height: number; html: string;
+};

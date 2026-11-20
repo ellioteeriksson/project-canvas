@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { Manifest, FrameStatus, Agent, SnapshotIndex } from "@/lib/types";
+import type { Manifest, FrameStatus, Agent, SnapshotIndex, PickedElement } from "@/lib/types";
 
 export type CanvasCtx = {
   manifest: Manifest;
@@ -20,6 +20,10 @@ export type CanvasCtx = {
   edits: Record<string, number>;
   snapshots: SnapshotIndex;
   selectedSection: { viewId: string; top: number; height: number; name: string } | null;
+  pickingId: string | null;
+  setPicking: (id: string | null) => void;
+  selectedElements: { viewId: string; elements: PickedElement[] } | null;
+  onPicked: (viewId: string, elements: PickedElement[]) => void;
   select: (id: string | null) => void;
   setInteractive: (id: string | null) => void;
   rename: (id: string, name: string) => void;

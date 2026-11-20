@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Browser, DeviceMobile, FolderSimple, CursorClick, LinkBreak, WarningCircle, CircleNotch, Warning, Sparkle, ArrowClockwise } from "@phosphor-icons/react";
+import { Browser, DeviceMobile, FolderSimple, CursorClick, LinkBreak, WarningCircle, CircleNotch, Warning, Sparkle, ArrowClockwise, SelectionPlus } from "@phosphor-icons/react";
 import type { Agent } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { api, frameUrl, snapshotKey } from "@/lib/api";
@@ -33,7 +33,8 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
   const c = useCanvas();
   const v = c.manifest.views.find((x) => x.id === viewId);
   const selected = c.selectedId === viewId;
-  const interactive = c.interactiveId === viewId;
+  const picking = c.pickingId === viewId;
+  const interactive = c.interactiveId === viewId || picking;
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -109,9 +110,12 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
         host(w, { type: "wireframe", on: wire });
         if (mode === "live") host(w, { type: "fullpage", on: full });
         else requestCapture();
+        if (picking) host(w, { type: "pick", on: true, selectors: c.selectedElements?.viewId === viewId ? c.selectedElements.elements.map((x) => x.selector) : [] });
       }
       if (d.type === "height" && full && mode === "live") reportHeight(viewId, d.h);
       if (d.type === "error") setPageError(d.message);
+      if (d.type === "picked") c.onPicked(viewId, d.elements);
+      if (d.type === "pick-done") c.setPicking(null);
       if (d.type === "snapshot" && d.id === pending.current) {
         pending.current = null;
         api.saveSnapshot({ key, dataUrl: d.dataUrl, h: d.h, w: d.w, at: d.id, sections: d.sections }).finally(() => releaseSlot(viewId));
@@ -132,6 +136,10 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
   });
 
   useEffect(() => { host(iframeRef.current?.contentWindow, { type: "wireframe", on: wire }); }, [wire, loaded]);
+  useEffect(() => {
+    if (!loaded) return;
+    host(iframeRef.current?.contentWindow, { type: "pick", on: picking, selectors: c.selectedElements?.viewId === viewId ? c.selectedElements.elements.map((x) => x.selector) : [] });
+  }, [picking, loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (mode === "live") host(iframeRef.current?.contentWindow, { type: "fullpage", on: full }); }, [full, loaded, mode]);
 
   // While an agent edits a live view: if hot reload doesn't update the page, reload it
@@ -202,7 +210,8 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
           "frame-card relative overflow-hidden rounded-[6px] bg-background ring-1 ring-foreground/12 transition-shadow",
           "shadow-[0_1px_2px_rgba(28,34,48,.08),0_6px_20px_-8px_rgba(28,34,48,.18)]",
           selected && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--scope)]",
-          interactive && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--live)]",
+          interactive && !picking && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--live)]",
+          picking && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--scope)]",
           interactive && "nodrag nopan nowheel",
         )}
         style={{ width: f.w, height: cardH }}
@@ -252,6 +261,25 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
           />
         )}
 
+        {!picking && c.selectedElements?.viewId === viewId && c.selectedElements.elements.map((el, i) => (
+          <div
+            key={`${el.selector}-${i}`}
+            aria-hidden
+            className="pointer-events-none absolute bg-scope/15"
+            style={{
+              left: Math.round(el.left * f.scale), top: Math.round(el.top * f.scale),
+              width: Math.max(3, Math.round(el.width * f.scale)), height: Math.max(3, Math.round(el.height * f.scale)),
+              boxShadow: "0 0 0 calc(1.5px * var(--title-scale, 1)) var(--scope)",
+            }}
+          >
+            <span
+              className="absolute -top-px -left-px grid origin-bottom-left place-items-center rounded-[3px] bg-scope px-1 font-semibold text-white"
+              style={{ fontSize: 10, transform: "translateY(-100%) scale(min(var(--title-scale, 1), 3))" }}
+            >
+              {i + 1}
+            </span>
+          </div>
+        ))}
         {c.selectedSection?.viewId === viewId && (
           <div
             aria-hidden
@@ -279,20 +307,31 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
             </span>
           </div>
         )}
-        {interactive && (
+        {interactive && !picking && (
           <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-live px-2.5 py-1 text-[11px] font-medium text-white shadow">
             Live · Esc to exit
           </div>
         )}
         {!interactive && v.url && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); c.setInteractive(v.id); }}
-            className="nodrag absolute right-2 bottom-2 flex items-center gap-1 rounded-md bg-background/95 px-2 py-1 text-[11px] font-medium opacity-0 shadow-sm outline-none transition-opacity group-hover/frame:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+          <div
+            className="nodrag absolute right-2 bottom-2 flex items-center gap-1 opacity-0 transition-opacity group-hover/frame:opacity-100 focus-within:opacity-100"
             style={{ transform: "scale(min(var(--title-scale, 1), 2.4))", transformOrigin: "bottom right" }}
           >
-            <CursorClick size={12} /> Interact
-          </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); c.setPicking(v.id); }}
+              className="flex items-center gap-1 rounded-md bg-background/95 px-2 py-1 text-[11px] font-medium shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <SelectionPlus size={12} /> Select elements
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); c.setInteractive(v.id); }}
+              className="flex items-center gap-1 rounded-md bg-background/95 px-2 py-1 text-[11px] font-medium shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <CursorClick size={12} /> Interact
+            </button>
+          </div>
         )}
       </div>
       <Handle id="out" type="source" position={sourcePosition ?? Position.Bottom} isConnectable={false} />

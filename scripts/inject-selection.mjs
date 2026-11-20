@@ -23,6 +23,27 @@ if (sel?.kind === "view") {
     `If the request is obviously meant for the whole project, ask the user before acting outside this view.`,
     `</project-canvas-scope>`,
   ].filter(Boolean).join("\n");
+} else if (sel?.kind === "elements") {
+  const lines = sel.elements.map((e, i) => {
+    const bits = [
+      `${i + 1}. ${e.kind} <${e.tag}>`,
+      e.text ? `"${e.text}"` : null,
+      `selector \`${e.selector}\``,
+      e.section ? `in section "${e.section}"` : null,
+      e.component ? `rendered by <${e.component} />${e.componentFile ? ` (${e.componentFile})` : ""}` : null,
+      e.href ? `href ${e.href}` : null,
+    ].filter(Boolean);
+    return `   ${bits.join(", ")}`;
+  });
+  ctx = [
+    `<project-canvas-scope>`,
+    `The user has highlighted ${sel.elements.length === 1 ? "one element" : `${sel.elements.length} elements`} on the page "${sel.viewName}" (route ${sel.route}${sel.file ? `, page file ${sel.file}` : ""}):`,
+    ...lines,
+    `Treat this prompt as applying ONLY to ${sel.elements.length === 1 ? "this element" : "these elements"}. Find ${sel.elements.length === 1 ? "it" : "them"} in the code by the text, component and selector above. Leave everything else on the page as it is.`,
+    `If an element comes from a component used elsewhere too, say so before changing the shared component, or make the change specific to this place.`,
+    sel.url && m?.devUrl ? `Live preview: ${m.devUrl.replace(/\/$/, "")}${sel.url}` : "",
+    `</project-canvas-scope>`,
+  ].filter(Boolean).join("\n");
 } else if (sel?.kind === "section") {
   const where = [
     sel.component ? `component <${sel.component} />${sel.componentFile ? ` in ${sel.componentFile}` : ""}` : null,

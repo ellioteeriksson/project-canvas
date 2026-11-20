@@ -4,7 +4,7 @@ import {
   useReactFlow, useViewport, useNodesState, type Node, type NodeMouseHandler,
 } from "@xyflow/react";
 import { TreeStructure, FlowArrow, Desktop, DeviceMobile, LinkBreak, Copy, Check, Rectangle, ArrowsVertical, Browser, Layout } from "@phosphor-icons/react";
-import type { Manifest, FrameStatus, Agent, SnapshotIndex, Selection } from "@/lib/types";
+import type { Manifest, FrameStatus, Agent, SnapshotIndex, Selection, PickedElement } from "@/lib/types";
 import { snapshotKey } from "@/lib/api";
 import { setLoadLimit } from "@/lib/load-queue";
 import { api, useDevServer } from "@/lib/api";
@@ -38,6 +38,7 @@ type Props = {
   edits: Record<string, number>;
   snapshots: SnapshotIndex;
   selection: Selection | null;
+  onPickElements: (viewId: string, elements: PickedElement[]) => void;
   ref?: Ref<CanvasHandle>;
 };
 
@@ -49,7 +50,7 @@ export function CanvasView(props: Props) {
   );
 }
 
-function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, ref }: Props) {
+function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, onPickElements, ref }: Props) {
   const rf = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
   const mode = manifest.mode;
@@ -92,6 +93,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
   const graph = useMemo(() => buildGraph(manifest, mode, device, full ? allHeights : null), [manifest, mode, device, full, allHeights]);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(graph.nodes);
   const [interactiveId, setInteractive] = useState<string | null>(null);
+  const [pickingId, setPicking] = useState<string | null>(null);
   const [showLive, setShowLive] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const devUp = useDevServer(manifest.devUrl);
@@ -168,19 +170,23 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t.closest("input, textarea, [contenteditable]")) return;
-      if (e.key === "Escape") { if (interactiveId) setInteractive(null); else onSelect(null); }
+      if (e.key === "Escape") { if (pickingId) setPicking(null); else if (interactiveId) setInteractive(null); else onSelect(null); }
       if (e.shiftKey && e.code === "Digit1") { e.preventDefault(); fitAll(); }
       if (e.shiftKey && e.code === "Digit2") { e.preventDefault(); zoomToCenter(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [interactiveId, onSelect, fitAll, zoomToCenter]);
+  }, [interactiveId, pickingId, onSelect, fitAll, zoomToCenter]);
 
   const ctx: CanvasCtx = {
     manifest, device, selectedId, interactiveId, showLive, devUp, reloadKey,
     full, heights, frames, reportHeight,
     wire: manifest.frameLayer === "wireframe",
     agentsByView, globalAgents, edits, snapshots,
+    pickingId,
+    setPicking: (id) => { setPicking(id); if (id) { setInteractive(null); focus(id); } },
+    selectedElements: selection?.kind === "elements" ? { viewId: selection.viewId, elements: selection.elements } : null,
+    onPicked: onPickElements,
     selectedSection: selection?.kind === "section" ? { viewId: selection.viewId, top: selection.position.top, height: selection.position.height, name: selection.name } : null,
     frameBase: manifest.frameUrl || manifest.devUrl,
     select: onSelect,
@@ -206,7 +212,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
           onNodesChange={onNodesChange}
           onNodeClick={onNodeClick}
           onNodeDragStop={onNodeDragStop}
-          onPaneClick={() => { setInteractive(null); onSelect(null); }}
+          onPaneClick={() => { setInteractive(null); setPicking(null); if (!pickingId) onSelect(null); }}
           onMove={(_, vp) => {
             setShowLive(vp.zoom >= LIVE_ZOOM);
             // Keep frame titles readable at any zoom, like Figma (no React re-render)
@@ -236,6 +242,14 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
           <Panel position="bottom-left" className="!m-3">
             <CanvasToolbar manifest={manifest} />
           </Panel>
+          {pickingId && (
+            <Panel position="top-center" className="!mt-3">
+              <div role="status" className="flex items-center gap-3 rounded-lg bg-scope py-1.5 pr-1.5 pl-3 text-[13px] text-white shadow-lg">
+                <span><b className="font-semibold">Click</b> to select · <b className="font-semibold">Shift-click</b> to add · <b className="font-semibold">↑ ↓</b> parent / child · <b className="font-semibold">Esc</b> to finish</span>
+                <Button size="sm" variant="secondary" onClick={() => setPicking(null)}>Done</Button>
+              </div>
+            </Panel>
+          )}
           {devUp === false && !manifest.devUrl.startsWith("/") && (
             <Panel position="top-center" className="!mt-3">
               <DevOffline url={manifest.devUrl} />

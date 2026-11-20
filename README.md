@@ -5,6 +5,7 @@ A Claude Code plugin that lays out every page or screen of your project on a liv
 - **Websites** appear as a **sitemap** (a tree by URL). **Products** appear as a **flow** (screens connected by the links and navigations found in the code).
 - Every view is a **snapshot** of the real page, visible at any zoom, in **Screen** or **Full page** height, as the **Live** design or as a **Wireframe**. Click **Interact** (or double-click) to use the live page right on the canvas.
 - **Sections tab:** every page broken into its designed sections (hero, features, footer …), paired with their components in code. Select a section to limit Claude to just that section.
+- **Highlight elements:** pick specific buttons, text, images or blocks in a view (**Select elements** on hover), and your next prompt changes only those.
 - **See Claude work:** while an agent reads or edits a view, its frame gets an orange ring and goes live, then the snapshot refreshes when it's done.
 - **Light, dark or system** theme for the canvas.
 - **Select a view, and your next prompt in Claude Code only affects that view.** Select nothing, and it affects the whole project.
@@ -44,6 +45,7 @@ The first time, Claude reads what was detected, checks whether the project is a 
 | --- | --- |
 | Click a frame or a row in the list | Your prompts are scoped to that view (highlighted in yellow). Esc or click the background to clear it. |
 | Double-click a frame, or hover and click **Interact** | Use the live page inside the canvas. Esc exits. |
+| Hover a frame → **Select elements** | Pick buttons, text, images or blocks. Click selects, Shift-click adds, ↑ ↓ parent/child, Esc finishes. Prompts then only affect those elements. |
 | Screen / Full page, Live / Wireframe | Change the frame height or layer (bottom toolbar). |
 | ☾ in the top bar | Light, dark, or match system. |
 | Double-click a name | Rename the view. |

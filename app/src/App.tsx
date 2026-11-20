@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowsOut, Crosshair, SidebarSimple, TreeStructure, FlowArrow, Swatches, X, Globe, Cube, Rows } from "@phosphor-icons/react";
 import { useCanvasData, api } from "@/lib/api";
+import type { PickedElement } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,13 @@ export default function App() {
     },
     [setState],
   );
+
+  const pickElements = useCallback((viewId: string, elements: PickedElement[]) => {
+    const view = manifest?.views.find((v) => v.id === viewId);
+    if (!elements.length) return select(null);
+    setState((s) => ({ ...s, selection: { kind: "elements", id: `${viewId}::elements`, viewId, viewName: view?.name ?? viewId, route: view?.route ?? viewId, name: elements.length === 1 ? elements[0].kind : `${elements.length} elements`, elements } }));
+    api.select({ kind: "elements", id: `${viewId}::elements`, viewId, elements });
+  }, [manifest, select, setState]);
 
   const openView = (id: string) => {
     setTab("canvas");
@@ -86,7 +94,7 @@ export default function App() {
 
           <div className="ml-auto flex items-center gap-1.5">
             <AgentIndicator agents={agents} manifest={manifest} onFocus={(id) => { setTab("canvas"); setTimeout(() => canvas.current?.focus(id), 60); }} />
-            <ScopeChip name={selection?.kind === "section" ? `${selectionName} on ${selection.viewName}` : selectionName} kind={selection?.kind} onClear={() => select(null)} />
+            <ScopeChip name={selection?.kind === "section" || selection?.kind === "elements" ? `${selectionName} on ${selection.viewName}` : selectionName} kind={selection?.kind} onClear={() => select(null)} />
             <Separator orientation="vertical" className="mx-1" />
             {tab === "canvas" && (
               <>
@@ -133,7 +141,7 @@ export default function App() {
             {tab === "sections" ? (
               <SectionsView manifest={manifest} snapshots={snapshots} selectedId={selectedId} onSelect={select} onShowView={openView} />
             ) : tab === "canvas" ? (
-              <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} agents={agents} edits={edits} snapshots={snapshots} selection={selection} />
+              <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} agents={agents} edits={edits} snapshots={snapshots} selection={selection} onPickElements={pickElements} />
             ) : (
               <DesignSystemView manifest={manifest} section={dsSection} selectedId={selectedId} onSelect={select} onOpenView={openView} />
             )}
@@ -149,7 +157,7 @@ export default function App() {
   );
 }
 
-function ScopeChip({ name, kind, onClear }: { name?: string; kind?: "view" | "component" | "section"; onClear: () => void }) {
+function ScopeChip({ name, kind, onClear }: { name?: string; kind?: "view" | "component" | "section" | "elements"; onClear: () => void }) {
   if (!name)
     return (
       <Tooltip>
