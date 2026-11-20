@@ -114,7 +114,7 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
       if (d.type === "error") setPageError(d.message);
       if (d.type === "snapshot" && d.id === pending.current) {
         pending.current = null;
-        api.saveSnapshot({ key, dataUrl: d.dataUrl, h: d.h, w: d.w, at: d.id }).finally(() => releaseSlot(viewId));
+        api.saveSnapshot({ key, dataUrl: d.dataUrl, h: d.h, w: d.w, at: d.id, sections: d.sections }).finally(() => releaseSlot(viewId));
       }
       if (d.type === "snapshot-error" && d.id === pending.current) {
         pending.current = null;
@@ -170,7 +170,7 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
           className={cn(
             c.device === "mobile" ? "max-w-full" : "max-w-[75%]",
             "nodrag flex min-w-0 shrink-0 items-center gap-1 rounded-[4px] py-0.5 pr-1.5 pl-0.5 text-[13px] font-medium text-foreground/80",
-            selected && "bg-scope text-[#1c2230]",
+            selected && "bg-scope text-white",
           )}
         >
           <button
@@ -201,8 +201,8 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
         className={cn(
           "frame-card relative overflow-hidden rounded-[6px] bg-background ring-1 ring-foreground/12 transition-shadow",
           "shadow-[0_1px_2px_rgba(28,34,48,.08),0_6px_20px_-8px_rgba(28,34,48,.18)]",
-          selected && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--foreground),0_0_0_calc(7px*var(--title-scale,1))_var(--scope)]",
-          interactive && "ring-0 shadow-[0_0_0_calc(3px*var(--title-scale,1))_var(--link)]",
+          selected && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--scope)]",
+          interactive && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--live)]",
           interactive && "nodrag nopan nowheel",
         )}
         style={{ width: f.w, height: cardH }}
@@ -252,6 +252,17 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
           />
         )}
 
+        {c.selectedSection?.viewId === viewId && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bg-scope/10"
+            style={{
+              top: Math.round(c.selectedSection.top * f.scale),
+              height: Math.max(4, Math.round(c.selectedSection.height * f.scale)),
+              boxShadow: "inset 0 0 0 calc(2px * var(--title-scale, 1)) var(--scope)",
+            }}
+          />
+        )}
         {busy && shown && (
           <span
             className="pointer-events-none absolute right-1.5 bottom-1.5 flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-muted-foreground shadow-sm"
@@ -269,7 +280,7 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
           </div>
         )}
         {interactive && (
-          <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-link px-2.5 py-1 text-[11px] font-medium text-white shadow">
+          <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-live px-2.5 py-1 text-[11px] font-medium text-white shadow">
             Live · Esc to exit
           </div>
         )}

@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { read, rel, readJSON, humanize, isDynamicSegment, walk } from "./fsutil.mjs";
-import { createResolver, buildGraph, closure, extractLinks, normalizeHref } from "./graph.mjs";
+import { createResolver, buildGraph, closure, extractLinks, normalizeHref, importBindings } from "./graph.mjs";
 import { detectFramework, defaultDevUrl, discoverRoutes } from "./routes.mjs";
 import { scanDesignSystem } from "./designsystem.mjs";
 
@@ -109,6 +109,24 @@ export function scanProject(root, config = loadConfig(root)) {
     const c = viewClosures.get(v.id) || new Set();
     v.files = [...c].filter((f) => fileUse.get(f) === 1).map((f) => rel(root, f));
     v.sharedFiles = [...c].filter((f) => fileUse.get(f) > 1).map((f) => rel(root, f));
+  }
+
+  // Section components each page renders, in order (<Hero />, <Pricing /> …)
+  for (const v of views) {
+    v.codeSections = [];
+    if (!v.file) continue;
+    const abs = path.join(root, v.file);
+    const src = read(abs).replace(/^\s*import[^;]*;?$/gm, "");
+    const bindings = importBindings(read(abs));
+    const seen = new Set();
+    for (const m of src.matchAll(/<([A-Z][A-Za-z0-9]*)\b/g)) {
+      const name = m[1];
+      if (seen.has(name) || !bindings.has(name)) continue;
+      const hit = resolve(abs, bindings.get(name));
+      if (!hit || hit.includes(`${path.sep}node_modules${path.sep}`) || /[\\/]ui[\\/]/.test(hit)) continue;
+      seen.add(name);
+      v.codeSections.push({ name, file: rel(root, hit) });
+    }
   }
 
   // Edges: links found in code

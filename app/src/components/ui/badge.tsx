@@ -7,7 +7,7 @@ const badgeVariants = cva("inline-flex items-center gap-1 rounded-md border px-1
       default: "border-transparent bg-primary text-primary-foreground",
       secondary: "border-transparent bg-secondary text-secondary-foreground",
       outline: "text-muted-foreground",
-      scope: "border-transparent bg-scope text-[#1c2230]",
+      scope: "border-transparent bg-scope text-white",
     },
   },
   defaultVariants: { variant: "default" },

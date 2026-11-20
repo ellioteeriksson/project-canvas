@@ -7,12 +7,12 @@ async function post<T = unknown>(url: string, body: unknown): Promise<T> {
 }
 
 export const api = {
-  select: (sel: { kind: "view" | "component"; id: string } | null) => post("/api/selection", sel ?? {}),
+  select: (sel: { kind: "view" | "component" | "section"; id: string } | null) => post("/api/selection", sel ?? {}),
   config: (patch: Record<string, unknown>) => post("/api/config", patch),
   rescan: () => post("/api/rescan", {}),
   suggestMessage: (ai: boolean) => post<{ message: string; source: string; note?: string }>("/api/git/message", { ai }),
   ship: (action: ShipAction, message: string) => post<ShipResult>("/api/git/ship", { action, message }),
-  saveSnapshot: (s: { key: string; dataUrl: string; h: number; w: number; at: number }) => post("/api/snapshot", s),
+  saveSnapshot: (s: { key: string; dataUrl: string; h: number; w: number; at: number; sections?: unknown[] }) => post("/api/snapshot", s),
   refreshSnapshots: () => post("/api/snapshots/refresh", {}),
 };
 

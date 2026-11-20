@@ -25,7 +25,7 @@ export function createSnapshotStore(root) {
     dir,
     get index() { return index; },
 
-    put({ key, dataUrl, h, w, at }) {
+    put({ key, dataUrl, h, w, at, sections }) {
       const m = /^data:image\/(webp|png|jpeg);base64,(.+)$/.exec(dataUrl || "");
       if (!key || !m) throw new Error("Bad snapshot");
       fs.mkdirSync(dir, { recursive: true });
@@ -34,7 +34,7 @@ export function createSnapshotStore(root) {
       fs.writeFileSync(path.join(dir, file), Buffer.from(m[2], "base64"));
       const prev = index[key];
       if (prev && prev.file !== file) try { fs.unlinkSync(path.join(dir, prev.file)); } catch {}
-      index[key] = { file, at: stamp, h: Math.round(h), w: Math.round(w) };
+      index[key] = { file, at: stamp, h: Math.round(h), w: Math.round(w), sections: Array.isArray(sections) ? sections.slice(0, 60) : [] };
       save();
       return index[key];
     },

@@ -19,6 +19,7 @@ export type CanvasCtx = {
   globalAgents: Agent[];
   edits: Record<string, number>;
   snapshots: SnapshotIndex;
+  selectedSection: { viewId: string; top: number; height: number; name: string } | null;
   select: (id: string | null) => void;
   setInteractive: (id: string | null) => void;
   rename: (id: string, name: string) => void;

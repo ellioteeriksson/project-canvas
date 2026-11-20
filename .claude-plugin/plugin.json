@@ -1,6 +1,6 @@
 {
   "name": "project-canvas",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "See every page or screen of a project on a live design canvas (sitemap for websites, flow for products), scope Claude's edits to the view you select, browse the design system, and commit, push or open a PR from the top bar.",
   "author": {
     "name": "Elliot Eriksson"
@@ -17,5 +17,7 @@
     "react-router"
   ],
   "license": "MIT",
-  "icon": ".claude-plugin/icon.png"
+  "icon": ".claude-plugin/icon.png",
+  "repository": "https://github.com/ellioteeriksson/project-canvas",
+  "homepage": "https://github.com/ellioteeriksson/project-canvas"
 }

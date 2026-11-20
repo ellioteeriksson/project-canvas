@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowsOut, Crosshair, SidebarSimple, TreeStructure, FlowArrow, Swatches, X, Globe, Cube } from "@phosphor-icons/react";
+import { ArrowsOut, Crosshair, SidebarSimple, TreeStructure, FlowArrow, Swatches, X, Globe, Cube, Rows } from "@phosphor-icons/react";
 import { useCanvasData, api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,12 +11,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { CanvasView, type CanvasHandle } from "@/components/canvas/canvas-view";
 import { ViewsSidebar, DesignSystemSidebar, type DsSection } from "@/components/sidebar";
 import { DesignSystemView } from "@/components/design-system/design-system-view";
+import { SectionsView } from "@/components/sections/sections-view";
 import { ShipButton } from "@/components/ship-button";
 import { SettingsPopover } from "@/components/settings-popover";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AgentIndicator } from "@/components/agent-indicator";
 
-type Tab = "canvas" | "design";
+type Tab = "canvas" | "sections" | "design";
 
 export default function App() {
   const { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots } = useCanvasData();
@@ -31,7 +32,7 @@ export default function App() {
 
   const select = useCallback(
     (id: string | null) => {
-      const kind = id?.startsWith("component:") ? "component" : "view";
+      const kind = id?.includes("::") ? "section" : id?.startsWith("component:") ? "component" : "view";
       // optimistic update so the highlight is instant
       setState((s) => ({ ...s, selection: id ? ({ ...(s.selection ?? {}), id, kind } as never) : null }));
       api.select(id ? { kind, id } : null);
@@ -78,13 +79,14 @@ export default function App() {
           <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="ml-2">
             <TabsList>
               <TabsTrigger value="canvas"><ModeIcon size={14} /> Canvas</TabsTrigger>
+              <TabsTrigger value="sections"><Rows size={14} /> Sections</TabsTrigger>
               <TabsTrigger value="design"><Swatches size={14} /> Design system</TabsTrigger>
             </TabsList>
           </Tabs>
 
           <div className="ml-auto flex items-center gap-1.5">
             <AgentIndicator agents={agents} manifest={manifest} onFocus={(id) => { setTab("canvas"); setTimeout(() => canvas.current?.focus(id), 60); }} />
-            <ScopeChip name={selectionName} kind={selection?.kind} onClear={() => select(null)} />
+            <ScopeChip name={selection?.kind === "section" ? `${selectionName} on ${selection.viewName}` : selectionName} kind={selection?.kind} onClear={() => select(null)} />
             <Separator orientation="vertical" className="mx-1" />
             {tab === "canvas" && (
               <>
@@ -111,12 +113,16 @@ export default function App() {
         <div className="flex min-h-0 flex-1">
           <aside className={cn("shrink-0 overflow-hidden border-r bg-background transition-[width] duration-200", sidebar ? "w-[272px]" : "w-0 border-r-0")} aria-hidden={!sidebar}>
             <div className="h-full w-[272px]">
-              {tab === "canvas" ? (
+              {tab !== "design" ? (
                 <ViewsSidebar
                   manifest={manifest}
                   activeViews={new Set(agents.flatMap((a) => a.views))}
                   selectedId={selectedId}
-                  onPick={(id, isGroup) => { if (!isGroup) select(id); canvas.current?.focus(id); }}
+                  onPick={(id, isGroup) => {
+                    if (tab === "sections") { document.getElementById(`sections-${id}`)?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" }); return; }
+                    if (!isGroup) select(id);
+                    canvas.current?.focus(id);
+                  }}
                 />
               ) : (
                 <DesignSystemSidebar manifest={manifest} section={dsSection} onSection={setDsSection} selectedId={selectedId} onPick={(id) => select(id)} />
@@ -124,8 +130,10 @@ export default function App() {
             </div>
           </aside>
           <main className="relative min-w-0 flex-1 bg-paper">
-            {tab === "canvas" ? (
-              <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} agents={agents} edits={edits} snapshots={snapshots} />
+            {tab === "sections" ? (
+              <SectionsView manifest={manifest} snapshots={snapshots} selectedId={selectedId} onSelect={select} onShowView={openView} />
+            ) : tab === "canvas" ? (
+              <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} agents={agents} edits={edits} snapshots={snapshots} selection={selection} />
             ) : (
               <DesignSystemView manifest={manifest} section={dsSection} selectedId={selectedId} onSelect={select} onOpenView={openView} />
             )}
@@ -141,7 +149,7 @@ export default function App() {
   );
 }
 
-function ScopeChip({ name, kind, onClear }: { name?: string; kind?: "view" | "component"; onClear: () => void }) {
+function ScopeChip({ name, kind, onClear }: { name?: string; kind?: "view" | "component" | "section"; onClear: () => void }) {
   if (!name)
     return (
       <Tooltip>
@@ -154,9 +162,9 @@ function ScopeChip({ name, kind, onClear }: { name?: string; kind?: "view" | "co
       </Tooltip>
     );
   return (
-    <span className="inline-flex h-7 items-center gap-1 rounded-md bg-scope pr-0.5 pl-2 text-xs font-medium text-[#1c2230]" role="status">
+    <span className="inline-flex h-7 items-center gap-1 rounded-md bg-scope pr-0.5 pl-2 text-xs font-medium text-white" role="status">
       <span className="max-w-[220px] truncate">Prompts only affect {kind === "component" ? "component" : ""} {name}</span>
-      <button type="button" onClick={onClear} aria-label="Clear scope" className="grid size-6 place-items-center rounded-[4px] outline-none hover:bg-black/10 focus-visible:ring-2 focus-visible:ring-[#1c2230]">
+      <button type="button" onClick={onClear} aria-label="Clear scope" className="grid size-6 place-items-center rounded-[4px] outline-none hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white">
         <X size={12} weight="bold" />
       </button>
     </span>

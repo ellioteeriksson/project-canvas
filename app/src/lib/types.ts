@@ -1,6 +1,7 @@
 export type View = {
   id: string; name: string; route: string; file: string | null; dynamic: boolean;
   url: string | null; manual: boolean; files: string[]; sharedFiles: string[];
+  codeSections?: { name: string; file: string }[];
 };
 export type Group = { id: string; name: string; route: string; group: true };
 export type Edge = { id: string; source: string; target: string; kind: "tree" | "link" | "manual"; label?: string };
@@ -19,7 +20,8 @@ export type Manifest = {
 };
 export type Selection =
   | { kind: "view"; id: string; name: string; route: string; url: string | null; file: string | null; files: string[]; sharedFiles: string[] }
-  | { kind: "component"; id: string; name: string; file: string; files: string[]; usedBy: string[] };
+  | { kind: "component"; id: string; name: string; file: string; files: string[]; usedBy: string[] }
+  | { kind: "section"; id: string; name: string; viewId: string; viewName: string; route: string; component: string | null; componentFile: string | null; position: { index: number; of: number; top: number; height: number } };
 export type CanvasState = { pid?: number | null; url?: string; selection?: Selection | null; updatedAt?: string };
 export type GitStatus = {
   repo: boolean; branch?: string; defaultBranch?: string; files?: { status: string; file: string }[];
@@ -34,5 +36,6 @@ export type Agent = {
   file: string | null; command: string | null; views: string[]; global: boolean; since: number; last: number;
 };
 export type EditEvent = { file: string | null; views: string[]; global: boolean; at: number };
-export type Snapshot = { file: string; at: number; h: number; w: number };
+export type PageSection = { name: string; heading: string | null; tag: string; id: string | null; component: string | null; top: number; height: number };
+export type Snapshot = { file: string; at: number; h: number; w: number; sections?: PageSection[] };
 export type SnapshotIndex = Record<string, Snapshot>;

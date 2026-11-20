@@ -3,61 +3,64 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Drafting-table theme. Highlighter yellow = "scoped" (what Claude will edit). */
+/* Neutral design-tool theme. Blue = selection / scope (what Claude will edit), green = live page,
+   Claude orange = an agent at work. */
 :root {
   --radius: 0.5rem;
   --background: #ffffff;
-  --foreground: #1c2230;
+  --foreground: #1e1e1e;
   --card: #ffffff;
-  --card-foreground: #1c2230;
+  --card-foreground: #1e1e1e;
   --popover: #ffffff;
-  --popover-foreground: #1c2230;
-  --primary: #1c2230;
+  --popover-foreground: #1e1e1e;
+  --primary: #1e1e1e;
   --primary-foreground: #ffffff;
-  --secondary: #eef1f5;
-  --secondary-foreground: #1c2230;
-  --muted: #eef1f5;
-  --muted-foreground: #5b6578;
-  --accent: #eef1f5;
-  --accent-foreground: #1c2230;
-  --destructive: #c4302b;
-  --border: #dde2e9;
-  --input: #c9d1db;
-  --ring: #2f5bd3;
-  --paper: #e9edf1;
-  --paper-dot: #c4ccd6;
-  --wire: #8d98a8;
-  --scope: #ffd23f;
-  --scope-ink: #1c2230;
-  --link: #2f5bd3;
-  --ok: #1f8a4c;
+  --secondary: #f0f0f0;
+  --secondary-foreground: #1e1e1e;
+  --muted: #f0f0f0;
+  --muted-foreground: #6b6b6b;
+  --accent: #ececec;
+  --accent-foreground: #1e1e1e;
+  --destructive: #d93b3b;
+  --border: #e3e3e3;
+  --input: #d4d4d4;
+  --ring: #0d99ff;
+  --paper: #f0f0f0;
+  --paper-dot: #cdcdcd;
+  --wire: #8f8f8f;
+  --scope: #0d99ff;
+  --scope-ink: #ffffff;
+  --live: #14ae5c;
+  --link: #0a7fd6;
+  --ok: #14ae5c;
 }
 .dark {
-  --background: #181c25;
-  --foreground: #e7eaf0;
-  --card: #1e232e;
-  --card-foreground: #e7eaf0;
-  --popover: #1e232e;
-  --popover-foreground: #e7eaf0;
-  --primary: #e7eaf0;
-  --primary-foreground: #181c25;
-  --secondary: #262c38;
-  --secondary-foreground: #e7eaf0;
-  --muted: #262c38;
-  --muted-foreground: #9aa4b6;
-  --accent: #2b3240;
-  --accent-foreground: #e7eaf0;
-  --destructive: #ef5f58;
-  --border: #2d3442;
-  --input: #3a4252;
-  --ring: #7d9cf0;
-  --paper: #11141b;
-  --paper-dot: #2a303c;
-  --wire: #5f6a7d;
-  --scope: #ffd23f;
-  --scope-ink: #ffd23f;
-  --link: #7d9cf0;
-  --ok: #4cc27f;
+  --background: #2c2c2c;
+  --foreground: #ededed;
+  --card: #2c2c2c;
+  --card-foreground: #ededed;
+  --popover: #333333;
+  --popover-foreground: #ededed;
+  --primary: #ededed;
+  --primary-foreground: #1e1e1e;
+  --secondary: #383838;
+  --secondary-foreground: #ededed;
+  --muted: #383838;
+  --muted-foreground: #a3a3a3;
+  --accent: #3d3d3d;
+  --accent-foreground: #ededed;
+  --destructive: #f2645f;
+  --border: #3d3d3d;
+  --input: #4a4a4a;
+  --ring: #3aa8ff;
+  --paper: #1e1e1e;
+  --paper-dot: #3a3a3a;
+  --wire: #6e6e6e;
+  --scope: #0d99ff;
+  --scope-ink: #ffffff;
+  --live: #3cc77f;
+  --link: #5cb8ff;
+  --ok: #3cc77f;
 }
 
 @theme inline {
@@ -91,6 +94,7 @@
   --color-scope: var(--scope);
   --color-scope-ink: var(--scope-ink);
   --color-link: var(--link);
+  --color-live: var(--live);
   --color-ok: var(--ok);
 }
 
@@ -121,8 +125,8 @@
 }
 
 /* ---------- Agent activity layer ---------- */
-:root { --agent: #6d5dfc; --agent-soft: #c9c2ff; }
-.dark { --agent: #8f84ff; --agent-soft: #4a4296; }
+:root { --agent: #d97757; --agent-soft: #f2c2ad; }
+.dark { --agent: #e08a6b; --agent-soft: #7a4535; }
 @property --agent-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 @keyframes agent-spin { to { --agent-angle: 360deg; } }
 @keyframes agent-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }

@@ -90,32 +90,50 @@ import { domToWebp } from "modern-screenshot";
   }
 
   /* ---------- Wireframe layer ---------- */
+  // A grayscale wireframe: blocks become gray fills, images become crossed boxes,
+  // text becomes gray bars, buttons gray pills, icons gray silhouettes.
+  const IMG_X_SRC = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none"><rect width="100" height="100" fill="#d6d6d6"/><path d="M0 0L100 100M100 0L0 100" stroke="#bdbdbd" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>')}`;
+  const IMG_X = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none"><rect width="100" height="100" fill="#d6d6d6"/><path d="M0 0L100 100M100 0L0 100" stroke="#bdbdbd" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>')}")`;
   const WIRE_CSS = `
 html.pc-wire, html.pc-wire body { background: #fff !important; }
 html.pc-wire *, html.pc-wire *::before, html.pc-wire *::after {
   background-color: transparent !important; background-image: none !important;
-  box-shadow: none !important; text-shadow: none !important; border-color: #cfd5dd !important;
+  box-shadow: none !important; text-shadow: none !important; border-color: #d9d9d9 !important;
   color: transparent !important; -webkit-text-fill-color: transparent !important; caret-color: transparent !important;
   text-decoration-line: underline !important; text-decoration-style: solid !important;
-  text-decoration-color: #d3d9e1 !important; text-decoration-thickness: .62em !important;
-  text-underline-offset: -.5em !important; text-decoration-skip-ink: none !important;
-  transition: none !important; animation: none !important;
+  text-decoration-color: #cfcfcf !important; text-decoration-thickness: .6em !important;
+  text-underline-offset: -.48em !important; text-decoration-skip-ink: none !important;
+  outline: none !important; transition: none !important; animation: none !important; filter: none !important; backdrop-filter: none !important;
 }
-html.pc-wire :is(h1, h2, h3, h4, h5, h6, h1 *, h2 *, h3 *, h4 *, h5 *, h6 *) { text-decoration-color: #a9b2bf !important; }
-html.pc-wire :is(a, a *) { text-decoration-color: #b4c3e6 !important; }
-html.pc-wire :is(button, [role="button"], input, select, textarea, summary) { outline: 1.5px solid #8d98a8 !important; outline-offset: 0 !important; border-radius: 6px; }
-html.pc-wire :is(header, nav, main, section, article, aside, footer, form) { outline: 1px dashed #c3cad4 !important; outline-offset: -1px !important; }
-html.pc-wire :is(img, picture, video, canvas, svg, iframe, object, embed) { filter: grayscale(1) contrast(0) brightness(1.5) !important; outline: 1px solid #c3cad4 !important; outline-offset: -1px !important; }
-html.pc-wire [data-pc-bg] { background-color: #e7eaef !important; }
+html.pc-wire :is(h1, h2, h3, h4, h5, h6, h1 *, h2 *, h3 *, h4 *, h5 *, h6 *) { text-decoration-color: #a3a3a3 !important; }
+html.pc-wire [data-pc-fill] { background-color: #f2f2f2 !important; }
+html.pc-wire [data-pc-fill] [data-pc-fill] { background-color: #e8e8e8 !important; }
+html.pc-wire [data-pc-fill] [data-pc-fill] [data-pc-fill] { background-color: #dedede !important; }
+html.pc-wire [data-pc-bg] { background: #d6d6d6 ${IMG_X.replace("url(", "url(")} center / 100% 100% no-repeat !important; }
+html.pc-wire :is(header, footer, section) { box-shadow: inset 0 -1px 0 #e3e3e3 !important; }
+html.pc-wire :is(button, [role="button"], input[type="submit"], input[type="button"], a[class*="btn"], a[class*="button"]) {
+  background-color: #d4d4d4 !important; border-color: #d4d4d4 !important;
+}
+html.pc-wire :is(button, [role="button"], a[class*="btn"], a[class*="button"]) :is(*), html.pc-wire :is(button, [role="button"]) { text-decoration-color: #9e9e9e !important; }
+html.pc-wire :is(input:not([type="submit"]):not([type="button"]), textarea, select) { background-color: #fff !important; border: 1px solid #bdbdbd !important; }
+html.pc-wire img { content: ${IMG_X} !important; object-fit: fill !important; }
+html.pc-wire :is(video, canvas, iframe, object, embed) { filter: grayscale(1) contrast(0) brightness(1.55) !important; }
+html.pc-wire svg { filter: grayscale(1) brightness(0) invert(.74) !important; }
 html.pc-wire ::placeholder { color: transparent !important; }`;
 
   function markBackgrounds() {
+    const page = getComputedStyle(document.body || document.documentElement).backgroundColor;
     const els = document.querySelectorAll("body *");
     for (let i = 0; i < els.length && i < 8000; i++) {
       const el = els[i];
-      if (el.hasAttribute("data-pc-bg")) continue;
-      const bg = getComputedStyle(el).backgroundImage;
-      if (bg && bg !== "none" && /url\(/.test(bg)) el.setAttribute("data-pc-bg", "");
+      if (el.hasAttribute("data-pc-bg") || el.hasAttribute("data-pc-fill")) continue;
+      const cs = getComputedStyle(el);
+      const bg = cs.backgroundImage;
+      if (bg && bg !== "none" && /url\(/.test(bg)) { el.setAttribute("data-pc-bg", ""); continue; }
+      const c = cs.backgroundColor;
+      const alpha = /rgba?\(([^)]+)\)/.exec(c)?.[1].split(",")[3];
+      const visible = c && c !== "transparent" && (alpha === undefined || parseFloat(alpha) > 0.06);
+      if ((visible && c !== page) || (bg && /gradient/.test(bg))) el.setAttribute("data-pc-fill", "");
     }
   }
   let wireTimer = 0;
@@ -163,6 +181,64 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     await sleep(350);
   }
 
+  /* ---------- Sections ---------- */
+  const SKIP_COMPONENT = /^(Fragment|Suspense|Section|Container|Box|Wrapper|Div|Main|Layout|RootLayout|Root|Provider|.*Provider|.*Boundary|AnimatePresence|Motion.*|Link|LinkComponent|Image|Img|.*Router|.*Handler|ClientPageRoot|ClientSegmentRoot|RenderFromTemplateContext|HTTPAccessFallback.*|Redirect.*|LoadingBoundary|Slot|Page|.*Page|App)$/;
+  function componentName(el) {
+    const k = Object.keys(el).find((x) => x.startsWith("__reactFiber$"));
+    let f = k ? el[k] : null;
+    for (let i = 0; f && i < 40; i++, f = f.return) {
+      const t = f.type;
+      const n = typeof t === "function" ? t.displayName || t.name : t && typeof t === "object" ? t.displayName || t.render?.name || t.type?.name : null;
+      if (n && /^[A-Z]/.test(n) && !SKIP_COMPONENT.test(n)) return n;
+    }
+    return null;
+  }
+  const humanize = (s) => s.replace(/[-_]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase()).trim();
+  function detectSections() {
+    const minH = 48;
+    const vis = (el) => { const r = el.getBoundingClientRect(); return r.height >= minH && r.width >= window.innerWidth * 0.5; };
+    const outermost = (list) => list.filter((el) => !list.some((o) => o !== el && o.contains(el)));
+    let list = outermost([...document.querySelectorAll("header, nav, section, footer, [data-section]")].filter(vis));
+    // A wrapper <section> holding several sections is split into its children
+    for (let pass = 0; pass < 3; pass++) {
+      list = list.flatMap((el) => {
+        const inner = outermost([...el.querySelectorAll("section, [data-section]")].filter((x) => x !== el && vis(x)));
+        return inner.length >= 2 ? inner : [el];
+      });
+    }
+    if (list.length < 2) {
+      let c = document.querySelector("main") || document.body;
+      for (let i = 0; i < 10; i++) { const kids = [...c.children].filter(vis); if (kids.length === 1) c = kids[0]; else break; }
+      list = [...c.children].filter(vis);
+    }
+    list = list.filter((el) => getComputedStyle(el).position !== "fixed");
+    const out = list
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        const heading = el.querySelector("h1, h2, h3, [role=heading]")?.textContent?.replace(/\s+/g, " ").trim().slice(0, 80) || null;
+        const tag = el.tagName.toLowerCase();
+        const label = el.getAttribute("data-section") || el.getAttribute("aria-label") || (el.id ? humanize(el.id) : null);
+        return {
+          name: label || heading || (tag === "header" ? "Header" : tag === "footer" ? "Footer" : tag === "nav" ? "Navigation" : null),
+          heading,
+          tag,
+          id: el.id || null,
+          component: componentName(el),
+          top: Math.round(r.top + window.scrollY),
+          height: Math.round(r.height),
+        };
+      })
+      .sort((a, b) => a.top - b.top);
+    // A component name shared by most sections is the page itself, not a section component
+    const counts = {};
+    out.forEach((x) => x.component && (counts[x.component] = (counts[x.component] || 0) + 1));
+    out.forEach((x, i) => {
+      if (x.component && counts[x.component] >= 3) x.component = null;
+      if (!x.name) x.name = x.component ? humanize(x.component) : `Section ${i + 1}`;
+    });
+    return out.slice(0, 60);
+  }
+
   let snapping = false;
   async function snapshot(id, maxW) {
     if (snapping) return;
@@ -185,9 +261,16 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
         style: { height: `${h}px`, minHeight: `${h}px`, overflow: "visible" },
         timeout: 20000,
         filter: (node) => !(node instanceof Element) || (!DEV_OVERLAYS.has(node.tagName) && !node.hasAttribute("data-project-canvas")),
+        // CSS \`content:\` swaps don't survive cloning, so wireframe images are swapped on the clone
+        onCloneEachNode: wire ? (n) => {
+          if (n instanceof HTMLImageElement) { n.removeAttribute("srcset"); n.src = IMG_X_SRC; n.style.objectFit = "fill"; }
+          else if (n instanceof HTMLSourceElement) n.removeAttribute("srcset");
+        } : null,
         fetch: { requestInit: { cache: "force-cache" } },
       });
-      post({ type: "snapshot", id, dataUrl, h, w });
+      let sections = [];
+      try { sections = detectSections(); } catch {}
+      post({ type: "snapshot", id, dataUrl, h, w, sections });
     } catch (err) {
       post({ type: "snapshot-error", id, message: String(err?.message || err).slice(0, 300) });
     } finally {

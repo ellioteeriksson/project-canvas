@@ -63,7 +63,7 @@ function Row({ item, depth, selectedId, onPick, active }: { item: TreeItem; dept
     <div
       className={cn(
         "group/row relative flex h-7 items-center gap-1.5 rounded-md pr-2 text-[13px] hover:bg-accent",
-        selected && "bg-scope/30 font-medium hover:bg-scope/40",
+        selected && "bg-scope/15 font-medium hover:bg-scope/20",
       )}
       style={{ paddingLeft: 6 + depth * 14 }}
     >
@@ -137,7 +137,7 @@ export function DesignSystemSidebar({ manifest, section, onSection, selectedId, 
                       <button
                         type="button"
                         onClick={() => onPick(c.id)}
-                        className={cn("relative flex h-7 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-[13px] outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", selectedId === c.id && "bg-scope/30 font-medium")}
+                        className={cn("relative flex h-7 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-[13px] outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", selectedId === c.id && "bg-scope/15 font-medium")}
                       >
                         {selectedId === c.id && <span aria-hidden className="absolute top-1 bottom-1 left-0 w-[3px] rounded-full bg-scope" />}
                         <span className="truncate">{c.name}</span>

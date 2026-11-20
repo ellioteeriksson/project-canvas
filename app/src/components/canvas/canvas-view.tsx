@@ -4,7 +4,7 @@ import {
   useReactFlow, useViewport, useNodesState, type Node, type NodeMouseHandler,
 } from "@xyflow/react";
 import { TreeStructure, FlowArrow, Desktop, DeviceMobile, LinkBreak, Copy, Check, Rectangle, ArrowsVertical, Browser, Layout } from "@phosphor-icons/react";
-import type { Manifest, FrameStatus, Agent, SnapshotIndex } from "@/lib/types";
+import type { Manifest, FrameStatus, Agent, SnapshotIndex, Selection } from "@/lib/types";
 import { snapshotKey } from "@/lib/api";
 import { setLoadLimit } from "@/lib/load-queue";
 import { api, useDevServer } from "@/lib/api";
@@ -37,6 +37,7 @@ type Props = {
   agents: Agent[];
   edits: Record<string, number>;
   snapshots: SnapshotIndex;
+  selection: Selection | null;
   ref?: Ref<CanvasHandle>;
 };
 
@@ -48,7 +49,7 @@ export function CanvasView(props: Props) {
   );
 }
 
-function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, ref }: Props) {
+function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, ref }: Props) {
   const rf = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
   const mode = manifest.mode;
@@ -180,6 +181,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     full, heights, frames, reportHeight,
     wire: manifest.frameLayer === "wireframe",
     agentsByView, globalAgents, edits, snapshots,
+    selectedSection: selection?.kind === "section" ? { viewId: selection.viewId, top: selection.position.top, height: selection.position.height, name: selection.name } : null,
     frameBase: manifest.frameUrl || manifest.devUrl,
     select: onSelect,
     setInteractive,
@@ -225,7 +227,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
             pannable
             zoomable
             position="bottom-right"
-            nodeColor={(n) => (n.id === selectedId ? "#ffd23f" : agentsByView.has(n.id) ? cssVar("--agent") : n.type === "group" ? "transparent" : cssVar("--input"))}
+            nodeColor={(n) => (n.id === selectedId ? cssVar("--scope") : agentsByView.has(n.id) ? cssVar("--agent") : n.type === "group" ? "transparent" : cssVar("--input"))}
             nodeStrokeColor={(n) => (n.id === selectedId ? cssVar("--foreground") : cssVar("--wire"))}
             nodeStrokeWidth={4}
             maskColor="color-mix(in oklab, var(--paper) 70%, transparent)"

@@ -23,6 +23,21 @@ if (sel?.kind === "view") {
     `If the request is obviously meant for the whole project, ask the user before acting outside this view.`,
     `</project-canvas-scope>`,
   ].filter(Boolean).join("\n");
+} else if (sel?.kind === "section") {
+  const where = [
+    sel.component ? `component <${sel.component} />${sel.componentFile ? ` in ${sel.componentFile}` : ""}` : null,
+    sel.heading ? `heading "${sel.heading}"` : null,
+    sel.domId ? `element #${sel.domId}` : `a <${sel.tag}> element`,
+  ].filter(Boolean).join(", ");
+  ctx = [
+    `<project-canvas-scope>`,
+    `The user has selected the section "${sel.name}" on the page "${sel.viewName}" (route ${sel.route}${sel.file ? `, page file ${sel.file}` : ""}).`,
+    `It is section ${sel.position.index + 1} of ${sel.position.of} from the top of the page. Identify it by: ${where}.`,
+    `Treat this prompt as applying ONLY to this section. Do not change other sections or other pages.`,
+    sel.componentFile ? `If ${sel.componentFile} is used on other pages too, say so before changing it, or make the change specific to this page.` : "",
+    sel.url && m?.devUrl ? `Live preview: ${m.devUrl.replace(/\/$/, "")}${sel.url}` : "",
+    `</project-canvas-scope>`,
+  ].filter(Boolean).join("\n");
 } else if (sel?.kind === "component") {
   ctx = [
     `<project-canvas-scope>`,

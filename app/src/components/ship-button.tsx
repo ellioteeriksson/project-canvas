@@ -31,7 +31,7 @@ export function ShipButton({ git, onDone }: { git: GitStatus | null; onDone: () 
         >
           <GitPullRequest size={15} weight="bold" />
           Ship
-          {changes > 0 && <span className="ml-0.5 rounded-sm bg-scope px-1 text-[11px] font-semibold tabular-nums text-[#1c2230]" aria-label={`${changes} changed files`}>{changes}</span>}
+          {changes > 0 && <span className="ml-0.5 rounded-sm bg-primary-foreground/20 px-1 text-[11px] font-semibold tabular-nums text-primary-foreground" aria-label={`${changes} changed files`}>{changes}</span>}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

@@ -4,7 +4,8 @@ A Claude Code plugin that lays out every page or screen of your project on a liv
 
 - **Websites** appear as a **sitemap** (a tree by URL). **Products** appear as a **flow** (screens connected by the links and navigations found in the code).
 - Every view is a **snapshot** of the real page, visible at any zoom, in **Screen** or **Full page** height, as the **Live** design or as a **Wireframe**. Click **Interact** (or double-click) to use the live page right on the canvas.
-- **See Claude work:** while an agent reads or edits a view, its frame gets a violet ring and goes live, then the snapshot refreshes when it's done.
+- **Sections tab:** every page broken into its designed sections (hero, features, footer …), paired with their components in code. Select a section to limit Claude to just that section.
+- **See Claude work:** while an agent reads or edits a view, its frame gets an orange ring and goes live, then the snapshot refreshes when it's done.
 - **Light, dark or system** theme for the canvas.
 - **Select a view, and your next prompt in Claude Code only affects that view.** Select nothing, and it affects the whole project.
 - A **Design system** tab shows your tokens, primitives (`components/ui`) and components, and which views use each one. Selecting a component scopes your prompts to it.
@@ -14,10 +15,18 @@ Built with shadcn/ui (Radix), Phosphor icons, React Flow and Tailwind v4. The se
 
 ## Install
 
-See **[INSTALL.md](INSTALL.md)**. In short: put the folder somewhere permanent, then run
+You need Claude Code and Node 20+. Run this in a terminal, or ask Claude to run it in a Code tab session in the desktop app:
 
 ```bash
-claude plugin marketplace add ~/claude-plugins/project-canvas && claude plugin install project-canvas@project-canvas
+claude plugin marketplace add ellioteeriksson/project-canvas && claude plugin install project-canvas@project-canvas
+```
+
+Start a new session, open a project and type `/canvas`. [INSTALL.md](INSTALL.md) has the details and troubleshooting.
+
+**Updates:**
+
+```bash
+claude plugin marketplace update project-canvas && claude plugin update project-canvas@project-canvas
 ```
 
 ## Use it on an existing project

@@ -79,9 +79,17 @@ Always **merge** into `config.json`. Read it, change the keys you need, and writ
 - **Known gaps:** content drawn by WebGL or video, iframes inside the page, and images from servers that block cross-origin requests may show up blank in snapshots, but they look right in the live view. Pages that hijack scrolling (smooth-scroll libraries, pinned GSAP sections) can render oddly.
 - Frames load a few at a time (`frameConcurrency`) so Next.js doesn't compile every route at once.
 
+## Sections tab
+
+The **Sections** tab shows every page broken into its designed sections (header, hero, features … footer) as crops of the page snapshot. Sections are found in the rendered page (`<header>`, `<section>`, `<footer>`, `[data-section]`, or a page's top-level blocks) and paired with the section components the page renders in code (`<Hero />`, `<Pricing />`). They're paired by name, or by order when the counts match. **By section** groups the same section across pages.
+
+When the user selects a section, the `<project-canvas-scope>` block names the section, its page, its position from the top, its heading, its DOM id and its component file. Change only that section. The section's component file and the page file are open for edits; anything else asks first. If the component is shared with other pages, say so, or make the change specific to this page.
+
+To make sections easier to find and name, suggest `<section id="…">` or `data-section="Name"` on top-level blocks.
+
 ## Agent activity layer
 
-Hooks report what Claude is doing to the canvas: thinking, reading, editing or running a command. The canvas shows it on the views the file belongs to, with an animated violet ring, a chip such as "Claude · Editing page.tsx", a dot in the views list and a status in the top bar. Edits to global files (layouts, global CSS) show on every frame. When Claude finishes, the affected snapshots are retaken and flagged "Updated". This needs no action from you, so carry on working normally.
+Hooks report what Claude is doing to the canvas: thinking, reading, editing or running a command. The canvas shows it on the views the file belongs to, with an animated ring in Claude's orange, a chip such as "Claude · Editing page.tsx", a dot in the views list and a status in the top bar. Edits to global files (layouts, global CSS) show on every frame. When Claude finishes, the affected snapshots are retaken and flagged "Updated". This needs no action from you, so carry on working normally.
 
 ## Detection details (for debugging an empty or wrong canvas)
 

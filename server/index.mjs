@@ -81,10 +81,40 @@ function selectionRecord(sel) {
     if (!c) return null;
     return { kind: "component", id: c.id, name: c.name, file: c.file, files: [c.file], usedBy: c.usedBy };
   }
+  if (sel.kind === "section") {
+    const [viewId, idx] = String(sel.id).split("::");
+    const v = manifest.views.find((x) => x.id === viewId);
+    const snap = Object.entries(snapshots.index).find(([k]) => k.startsWith(`${viewId}|`) && k.endsWith("|live"))?.[1];
+    const sec = snap?.sections?.[Number(idx)];
+    if (!v || !sec) return null;
+    const code = matchCodeSection(v, snap.sections, Number(idx));
+    // The section's own component plus the page file (where it's placed); everything else asks first
+    const files = [...new Set([...(code ? [code.file] : []), v.file].filter(Boolean))];
+    return {
+      kind: "section", id: sel.id, name: sec.name, viewId: v.id, viewName: v.name, route: v.route, url: v.url,
+      heading: sec.heading, tag: sec.tag, domId: sec.id, component: code?.name || sec.component || null,
+      componentFile: code?.file || null, file: v.file, files, sharedFiles: v.sharedFiles,
+      position: { index: Number(idx), of: snap.sections.length, top: sec.top, height: sec.height },
+    };
+  }
   const v = manifest.views.find((x) => x.id === sel.id);
   if (!v) return null;
   return { kind: "view", id: v.id, name: v.name, route: v.route, url: v.url, file: v.file, files: v.files, sharedFiles: v.sharedFiles };
 }
+/** Pair a section found in the rendered page with a section component from the page's code. */
+function matchCodeSection(view, sections, idx) {
+  const code = view.codeSections || [];
+  const sec = sections[idx];
+  if (!sec || !code.length) return null;
+  const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const byName = code.find((c) => [sec.component, sec.id, sec.name].some((n) => n && (norm(n) === norm(c.name) || norm(n).includes(norm(c.name)))));
+  if (byName) return byName;
+  // Same count (ignoring header/nav/footer from the layout): match by order
+  const body = sections.map((s, i) => [s, i]).filter(([s]) => !["header", "nav", "footer"].includes(s.tag));
+  if (body.length === code.length) { const pos = body.findIndex(([, i]) => i === idx); return pos >= 0 ? code[pos] : null; }
+  return null;
+}
+
 function refreshSelection() {
   const st = readState();
   if (!st.selection) return;
@@ -183,6 +213,7 @@ async function handle(req, res) {
     try {
       snapshots.put(body);
       broadcast("snapshots", snapshots.index);
+      refreshSelection();
       return send(res, 200, { ok: true });
     } catch (e) {
       return send(res, 400, { error: String(e.message) });
