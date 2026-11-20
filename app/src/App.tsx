@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowsOut, Crosshair, SidebarSimple, TreeStructure, FlowArrow, Swatches, X, Globe, Cube, Rows } from "@phosphor-icons/react";
+import { SidebarSimple, TreeStructure, FlowArrow, Swatches, Globe, Cube, Rows } from "@phosphor-icons/react";
 import { useCanvasData, api } from "@/lib/api";
 import type { PickedElement } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Kbd } from "@/components/ui/kbd";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { CanvasView, type CanvasHandle } from "@/components/canvas/canvas-view";
@@ -33,13 +31,17 @@ export default function App() {
   useEffect(() => { if (manifest) document.title = `${manifest.project.name} · Project Canvas`; }, [manifest?.project.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const select = useCallback(
-    (id: string | null) => {
+    (id: string | null, extra?: Record<string, unknown>) => {
       const kind = id?.includes("::") ? "section" : id?.startsWith("component:") ? "component" : "view";
       // optimistic update so the highlight is instant
-      setState((s) => ({ ...s, selection: id ? ({ ...(s.selection ?? {}), id, kind } as never) : null }));
-      api.select(id ? { kind, id } : null);
+      setState((s) => {
+        const viewId = kind === "section" ? id!.split("::")[0] : undefined;
+        const viewName = viewId ? manifest?.views.find((v) => v.id === viewId)?.name : undefined;
+        return { ...s, selection: id ? ({ ...(s.selection?.id === id ? s.selection : {}), id, kind, ...(viewId ? { viewId, viewName } : {}) } as never) : null };
+      });
+      api.select(id ? { kind, id, ...extra } : null);
     },
-    [setState],
+    [setState, manifest],
   );
 
   const pickElements = useCallback((viewId: string, elements: PickedElement[]) => {
@@ -95,24 +97,6 @@ export default function App() {
 
           <div className="ml-auto flex items-center gap-1.5">
             <AgentIndicator agents={agents} manifest={manifest} onFocus={(id) => { setTab("canvas"); setTimeout(() => canvas.current?.focus(id), 60); }} />
-            <ScopeChip name={selection?.kind === "section" || selection?.kind === "elements" ? `${selectionName} on ${selection.viewName}` : selectionName} kind={selection?.kind} onClear={() => select(null)} />
-            <Separator orientation="vertical" className="mx-1" />
-            {tab === "canvas" && (
-              <>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" onClick={() => canvas.current?.fitAll()} aria-label="Zoom to fit the whole project"><ArrowsOut size={17} /></Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Show whole project <Kbd>⇧1</Kbd></TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" onClick={() => canvas.current?.zoomToCenter()} aria-label="Zoom in to the view in the center"><Crosshair size={17} /></Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Zoom to center view <Kbd>⇧2</Kbd></TooltipContent>
-                </Tooltip>
-              </>
-            )}
             <ThemeToggle />
             <SettingsPopover manifest={manifest} />
             <ShipButton git={git} onDone={refreshGit} />
@@ -126,7 +110,7 @@ export default function App() {
                 <ViewsSidebar
                   manifest={manifest}
                   activeViews={new Set(agents.flatMap((a) => a.views))}
-                  selectedId={selectedId}
+                  selectedId={selection && (selection.kind === "section" || selection.kind === "elements") ? selection.viewId : selectedId}
                   onPick={(id, isGroup) => {
                     if (tab === "sections") { document.getElementById(`sections-${id}`)?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" }); return; }
                     if (!isGroup) select(id);
@@ -150,6 +134,7 @@ export default function App() {
               chat={chat}
               agents={agents}
               selection={selection}
+              onClearScope={() => select(null)}
               scopeName={selectionName ? (selection?.kind === "section" || selection?.kind === "elements" ? `${selectionName} on ${selection.viewName}` : selectionName) : null}
             />
             {!connected && (
@@ -161,27 +146,5 @@ export default function App() {
         </div>
       </div>
     </TooltipProvider>
-  );
-}
-
-function ScopeChip({ name, kind, onClear }: { name?: string; kind?: "view" | "component" | "section" | "elements"; onClear: () => void }) {
-  if (!name)
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span tabIndex={0} className="hidden h-7 items-center rounded-md border border-dashed border-input px-2 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex">
-            Prompts affect the whole project
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>Select a view to limit your Claude Code prompts to it</TooltipContent>
-      </Tooltip>
-    );
-  return (
-    <span className="inline-flex h-7 items-center gap-1 rounded-md bg-scope pr-0.5 pl-2 text-xs font-medium text-white" role="status">
-      <span className="max-w-[220px] truncate">Prompts only affect {kind === "component" ? "component" : ""} {name}</span>
-      <button type="button" onClick={onClear} aria-label="Clear scope" className="grid size-6 place-items-center rounded-[4px] outline-none hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white">
-        <X size={12} weight="bold" />
-      </button>
-    </span>
   );
 }

@@ -33,7 +33,7 @@ function StatusDot({ status, className }: { status: ChatStatus; className?: stri
 const chatName = (c: ChatConn) => (c.label ? `“${c.label}”` : "New chat");
 
 /** Prompt bar: send a prompt from the canvas to a Claude Code chat open in this project. */
-export function PromptBar({ chat, agents, selection, scopeName }: { chat: ChatState; agents: Agent[]; selection: Selection | null; scopeName: string | null }) {
+export function PromptBar({ chat, agents, selection, scopeName, onClearScope }: { chat: ChatState; agents: Agent[]; selection: Selection | null; scopeName: string | null; onClearScope: () => void }) {
   const [text, setText] = useState("");
   const [target, setTarget] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -114,9 +114,17 @@ export function PromptBar({ chat, agents, selection, scopeName }: { chat: ChatSt
             className="flex flex-col gap-1.5 px-3 pt-2.5 pb-2"
           >
             <div className="flex items-center gap-2">
-              <span className={cn("inline-flex h-6 max-w-[70%] items-center gap-1 rounded-md px-1.5 text-xs font-medium", selection ? "bg-scope/12 text-scope" : "bg-muted text-muted-foreground")}>
+              <span className={cn("inline-flex h-6 max-w-[60%] min-w-0 items-center gap-1 rounded-md text-xs font-medium", selection ? "bg-scope/12 pl-1.5 text-scope" : "bg-muted px-1.5 text-muted-foreground")}>
                 <Crosshair size={12} weight="bold" className="shrink-0" />
                 <span className="truncate">{scopeName ?? "Whole project"}</span>
+                {selection && (
+                  <button type="button" onClick={onClearScope} aria-label="Clear scope: prompt the whole project" className="grid size-6 shrink-0 place-items-center rounded-md outline-none hover:bg-scope/15 focus-visible:ring-2 focus-visible:ring-ring">
+                    <X size={11} weight="bold" />
+                  </button>
+                )}
+              </span>
+              <span className="hidden min-w-0 truncate text-xs text-muted-foreground md:inline">
+                {!selection ? "Click a page to narrow it down" : selection.kind === "view" ? "Click a section in the page to narrow further" : null}
               </span>
               <Button
                 type="button" variant="ghost" size="sm"

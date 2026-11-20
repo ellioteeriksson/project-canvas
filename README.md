@@ -45,13 +45,14 @@ The first time, Claude reads what was detected, checks whether the project is a 
 | What you do | What happens |
 | --- | --- |
 | Click a frame or a row in the list | Your prompts are scoped to that view (highlighted in blue). Esc or click the background to clear it. |
+| Then click a section inside it | Your prompts are scoped to just that section (hero, features, footer …). Hover shows the section names. Esc steps back to the page. |
 | Double-click a frame, or hover and click **Interact** | Use the live page inside the canvas. Esc exits. |
 | Hover a frame → **Select elements** | Pick buttons, text, images or blocks. Click selects, Shift-click adds, ↑ ↓ parent/child, Esc finishes. Prompts then only affect those elements. |
 | Screen / Full page, Live / Wireframe | Change the frame height or layer (toolbar at the top left of the canvas). |
 | ☾ in the top bar | Light, dark, or match system. |
 | Double-click a name | Rename the view. |
-| ⤢ / Shift+1 | Zoom out to show the whole project. |
-| ⌖ / Shift+2 | Zoom in on the view closest to the centre of the screen. |
+| ⤢ / Shift+1 (canvas toolbar) | Zoom out to show the whole project. |
+| ⌖ / Shift+2 (canvas toolbar) | Zoom in on the view closest to the centre of the screen. |
 | Sitemap / Flow, Desktop / Mobile | Switch the layout or the frame size (same toolbar). |
 | Drag frames | Your layout is saved. Use Settings → Reset layout to undo it. |
 | Prompt bar / ⌘K | Send a prompt to the Claude Code chat open in this project. It's scoped to what's selected. Click the speech bubble to see earlier prompts and Claude's answers. |

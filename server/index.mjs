@@ -109,14 +109,17 @@ function selectionRecord(sel) {
   if (sel.kind === "section") {
     const [viewId, idx] = String(sel.id).split("::");
     const v = manifest.views.find((x) => x.id === viewId);
-    const snap = Object.entries(snapshots.index).find(([k]) => k.startsWith(`${viewId}|`) && k.endsWith("|live"))?.[1];
+    // Sections come from the snapshot of the device the canvas shows (live layer first, then wireframe)
+    const device = sel.device === "mobile" ? "mobile" : "desktop";
+    const snap = [`${viewId}|${device}|live`, `${viewId}|${device}|wireframe`].map((k) => snapshots.index[k]).find((x) => x?.sections?.length)
+      || Object.entries(snapshots.index).find(([k, x]) => k.startsWith(`${viewId}|`) && x?.sections?.length)?.[1];
     const sec = snap?.sections?.[Number(idx)];
     if (!v || !sec) return null;
     const code = matchCodeSection(v, snap.sections, Number(idx));
     // The section's own component plus the page file (where it's placed); everything else asks first
     const files = [...new Set([...(code ? [code.file] : []), v.file].filter(Boolean))];
     return {
-      kind: "section", id: sel.id, name: sec.name, viewId: v.id, viewName: v.name, route: v.route, url: v.url,
+      kind: "section", id: sel.id, device, name: sec.name, viewId: v.id, viewName: v.name, route: v.route, url: v.url,
       heading: sec.heading, tag: sec.tag, domId: sec.id, component: code?.name || sec.component || null,
       componentFile: code?.file || null, file: v.file, files, sharedFiles: v.sharedFiles,
       position: { index: Number(idx), of: snap.sections.length, top: sec.top, height: sec.height },

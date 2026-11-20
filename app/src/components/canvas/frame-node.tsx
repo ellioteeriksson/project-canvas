@@ -33,6 +33,8 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
   const c = useCanvas();
   const v = c.manifest.views.find((x) => x.id === viewId);
   const selected = c.selectedId === viewId;
+  // A section or elements inside this view are selected
+  const inside = !selected && c.activeViewId === viewId;
   const picking = c.pickingId === viewId;
   const interactive = c.interactiveId === viewId || picking;
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -75,7 +77,9 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
   // Flash "Updated" when a fresh snapshot replaces an older one
   const prevAt = useRef(snap?.at);
   useEffect(() => {
-    if (prevAt.current && snap?.at && snap.at > prevAt.current) setUpdatedAt(Date.now());
+    // Only call it out when Claude changed the page, not for routine refreshes
+    const edited = Math.max(c.edits[viewId] ?? 0, c.edits["*"] ?? 0);
+    if (prevAt.current && snap?.at && snap.at > prevAt.current && Date.now() - edited < 90_000) setUpdatedAt(Date.now());
     prevAt.current = snap?.at;
   }, [snap?.at]);
 
@@ -164,6 +168,9 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
   const st = v.url ? c.frames[v.url] ?? c.frames[v.url + "/"] : undefined;
   const httpFailed = st && (st.status === 0 || st.status >= 400) ? st : null;
   const liveVisible = mode === "live" && granted && loaded;
+  const secSnap = [shown, c.snapshots[snapshotKey(viewId, c.device, "live")], c.snapshots[snapshotKey(viewId, c.device, "wireframe")]].find((x) => x?.sections?.length);
+  const sections = secSnap?.sections ?? [];
+  const showSections = c.activeViewId === viewId && !interactive && !picking && sections.length > 0;
   const busy = needIframe && mode === "capture";
 
   return (
@@ -179,6 +186,7 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
             c.device === "mobile" ? "max-w-full" : "max-w-[75%]",
             "nodrag flex min-w-0 shrink-0 items-center gap-1 rounded-[4px] py-0.5 pr-1.5 pl-0.5 text-[13px] font-medium text-foreground/80",
             selected && "bg-scope text-white",
+            inside && "text-scope",
           )}
         >
           <button
@@ -197,7 +205,7 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
         ) : updatedAt > 0 && Date.now() - updatedAt < 2500 ? (
           <span key={updatedAt} className="updated-chip ml-auto flex shrink-0 items-center gap-1 pb-0.5 text-[11px] font-medium text-ok"><ArrowClockwise size={11} weight="bold" /> Updated</span>
         ) : (
-          c.device === "desktop" && <span className="ml-auto min-w-0 truncate pb-0.5 font-mono text-[11px] text-muted-foreground" title={v.file ?? undefined}>{v.route}</span>
+          c.device === "desktop" && <span className={cn("ml-auto min-w-0 truncate pb-0.5 font-mono text-[11px] text-muted-foreground opacity-0 transition-opacity group-hover/frame:opacity-100", (selected || inside) && "opacity-100")} title={v.file ?? undefined}>{v.route}</span>
         )}
       </div>
 
@@ -207,9 +215,10 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
 
       <div
         className={cn(
-          "frame-card relative overflow-hidden rounded-[6px] bg-background ring-1 ring-foreground/12 transition-shadow",
+          "frame-card relative overflow-hidden rounded-[6px] bg-background ring-1 ring-foreground/12 transition-shadow hover:ring-foreground/30",
           "shadow-[0_1px_2px_rgba(28,34,48,.08),0_6px_20px_-8px_rgba(28,34,48,.18)]",
           selected && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--scope)]",
+          inside && "ring-0 shadow-[0_0_0_calc(1px*var(--title-scale,1))_var(--scope)]",
           interactive && !picking && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--live)]",
           picking && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--scope)]",
           interactive && "nodrag nopan nowheel",
@@ -280,23 +289,59 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
             </span>
           </div>
         ))}
-        {c.selectedSection?.viewId === viewId && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 bg-scope/10"
-            style={{
-              top: Math.round(c.selectedSection.top * f.scale),
-              height: Math.max(4, Math.round(c.selectedSection.height * f.scale)),
-              boxShadow: "inset 0 0 0 calc(2px * var(--title-scale, 1)) var(--scope)",
-            }}
-          />
+        {showSections ? (
+          sections.map((sec, i) => {
+            const id = `${viewId}::${i}`;
+            const on = c.selectedSectionId === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); c.selectSection(viewId, on ? null : i); }}
+                aria-pressed={on}
+                aria-label={on ? `Back to the whole ${v.name} page` : `Scope prompts to the ${sec.name} section`}
+                className={cn(
+                  "group/sec absolute inset-x-0 block cursor-pointer outline-none",
+                  on
+                    ? "bg-scope/10 shadow-[inset_0_0_0_calc(2px*var(--title-scale,1))_var(--scope)]"
+                    : "hover:bg-scope/[0.06] hover:shadow-[inset_0_0_0_calc(1.5px*var(--title-scale,1))_var(--scope)] focus-visible:shadow-[inset_0_0_0_calc(1.5px*var(--title-scale,1))_var(--scope)]",
+                )}
+                style={{ top: Math.round(sec.top * f.scale), height: Math.max(4, Math.round(sec.height * f.scale)) }}
+              >
+                {/* faint divider so the page's structure reads while the view is in scope */}
+                {i > 0 && !on && <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-scope/35" />}
+                <span
+                  className={cn(
+                    "pointer-events-none absolute top-0 left-0 origin-top-left items-center gap-1 rounded-br-[4px] bg-scope px-1.5 py-0.5 font-medium whitespace-nowrap text-white",
+                    on ? "flex" : "hidden group-hover/sec:flex group-focus-visible/sec:flex",
+                  )}
+                  style={{ fontSize: 11, transform: "scale(min(var(--title-scale, 1), 3))" }}
+                >
+                  {sec.name}
+                </span>
+              </button>
+            );
+          })
+        ) : (
+          c.selectedSection?.viewId === viewId && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 bg-scope/10"
+              style={{
+                top: Math.round(c.selectedSection.top * f.scale),
+                height: Math.max(4, Math.round(c.selectedSection.height * f.scale)),
+                boxShadow: "inset 0 0 0 calc(2px * var(--title-scale, 1)) var(--scope)",
+              }}
+            />
+          )
         )}
         {busy && shown && (
           <span
-            className="pointer-events-none absolute right-1.5 bottom-1.5 flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-muted-foreground shadow-sm"
-            style={{ fontSize: "calc(11px * min(var(--title-scale, 1), 2.4))" }}
+            className="pointer-events-none absolute top-1.5 right-1.5 grid size-5 place-items-center rounded-full bg-background/90 text-muted-foreground shadow-sm"
+            style={{ transform: "scale(min(var(--title-scale, 1), 2.4))", transformOrigin: "top right" }}
+            title="Refreshing snapshot"
           >
-            <CircleNotch size={11} className="animate-spin" /> Refreshing
+            <CircleNotch size={11} className="animate-spin" />
           </span>
         )}
         {(httpFailed || pageError) && (

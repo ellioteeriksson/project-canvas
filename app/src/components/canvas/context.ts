@@ -25,6 +25,10 @@ export type CanvasCtx = {
   selectedElements: { viewId: string; elements: PickedElement[] } | null;
   onPicked: (viewId: string, elements: PickedElement[]) => void;
   select: (id: string | null) => void;
+  /** The view whose content is in scope: the selected view, or the view of a selected section or elements */
+  activeViewId: string | null;
+  selectedSectionId: string | null;
+  selectSection: (viewId: string, index: number | null) => void;
   setInteractive: (id: string | null) => void;
   rename: (id: string, name: string) => void;
   setParam: (route: string, url: string) => void;

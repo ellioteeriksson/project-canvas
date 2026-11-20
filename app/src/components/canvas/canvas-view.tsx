@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import {
-  ReactFlow, ReactFlowProvider, Background, BackgroundVariant, MiniMap, Panel,
+  ReactFlow, ReactFlowProvider, Background, BackgroundVariant, Panel,
   useReactFlow, useViewport, useNodesState, type Node, type NodeMouseHandler,
 } from "@xyflow/react";
-import { TreeStructure, FlowArrow, Desktop, DeviceMobile, LinkBreak, Copy, Check, Rectangle, ArrowsVertical, Browser, Layout } from "@phosphor-icons/react";
+import { TreeStructure, FlowArrow, Desktop, DeviceMobile, LinkBreak, Copy, Check, Rectangle, ArrowsVertical, Browser, Layout, ArrowsOut, Crosshair } from "@phosphor-icons/react";
+import { Kbd } from "@/components/ui/kbd";
 import type { Manifest, FrameStatus, Agent, SnapshotIndex, Selection, PickedElement } from "@/lib/types";
 import { snapshotKey } from "@/lib/api";
 import { setLoadLimit } from "@/lib/load-queue";
@@ -14,11 +15,6 @@ import { Button } from "@/components/ui/button";
 import { CanvasContext, type CanvasCtx } from "./context";
 import { buildGraph } from "./layout";
 import { FrameNode, GroupNode } from "./frame-node";
-
-/** SVG attributes can't use CSS variables, so read the current theme's value. */
-function cssVar(name: string) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#8d98a8";
-}
 
 export type CanvasHandle = {
   fitAll: () => void;
@@ -32,7 +28,7 @@ const LIVE_ZOOM = 0.2;
 type Props = {
   manifest: Manifest;
   selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  onSelect: (id: string | null, extra?: Record<string, unknown>) => void;
   frames: FrameStatus;
   agents: Agent[];
   edits: Record<string, number>;
@@ -118,14 +114,15 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     }
     return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
   }, [rf]);
-  const fitAll = useCallback((duration = 450) => { const b = boundsOf(); if (b) rf.fitBounds(b, { padding: "56px", duration }); }, [rf, boundsOf]);
+  const fitAll = useCallback((duration = 450) => { const b = boundsOf(); if (b) rf.fitBounds(b, { padding: { top: "72px", bottom: "176px", left: "48px", right: "48px" }, duration }); }, [rf, boundsOf]);
   const focus = useCallback((id: string) => {
     const b = boundsOf([id]);
     if (!b) return;
     const el = wrapper.current;
     // Leave room for the title above the frame and a margin around it
-    const zoom = el ? Math.min(3, (el.clientWidth - 96) / b.width, (el.clientHeight - 120) / b.height) : 1;
-    rf.setCenter(b.x + b.width / 2, b.y + b.height / 2, { zoom, duration: 450 });
+    // and keep it clear of the toolbar (top) and the prompt bar (bottom)
+    const zoom = el ? Math.min(3, (el.clientWidth - 96) / b.width, (el.clientHeight - 260) / b.height) : 1;
+    rf.setCenter(b.x + b.width / 2, b.y + b.height / 2 + 50 / zoom, { zoom, duration: 450 });
   }, [rf, boundsOf]);
   const zoomToCenter = useCallback(() => {
     const el = wrapper.current;
@@ -170,13 +167,19 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t.closest("input, textarea, [contenteditable]")) return;
-      if (e.key === "Escape") { if (pickingId) setPicking(null); else if (interactiveId) setInteractive(null); else onSelect(null); }
+      if (e.key === "Escape") {
+        if (pickingId) setPicking(null);
+        else if (interactiveId) setInteractive(null);
+        // Step out one level: section or elements → their view → nothing
+        else if (selection && (selection.kind === "section" || selection.kind === "elements")) onSelect(selection.viewId);
+        else onSelect(null);
+      }
       if (e.shiftKey && e.code === "Digit1") { e.preventDefault(); fitAll(); }
       if (e.shiftKey && e.code === "Digit2") { e.preventDefault(); zoomToCenter(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [interactiveId, pickingId, onSelect, fitAll, zoomToCenter]);
+  }, [interactiveId, pickingId, onSelect, fitAll, zoomToCenter, selection]);
 
   const ctx: CanvasCtx = {
     manifest, device, selectedId, interactiveId, showLive, devUp, reloadKey,
@@ -187,9 +190,12 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     setPicking: (id) => { setPicking(id); if (id) { setInteractive(null); focus(id); } },
     selectedElements: selection?.kind === "elements" ? { viewId: selection.viewId, elements: selection.elements } : null,
     onPicked: onPickElements,
-    selectedSection: selection?.kind === "section" ? { viewId: selection.viewId, top: selection.position.top, height: selection.position.height, name: selection.name } : null,
+    selectedSection: selection?.kind === "section" && selection.position ? { viewId: selection.viewId, top: selection.position.top, height: selection.position.height, name: selection.name } : null,
     frameBase: manifest.frameUrl || manifest.devUrl,
     select: onSelect,
+    activeViewId: selection && (selection.kind === "section" || selection.kind === "elements") ? selection.viewId : selection?.kind === "view" ? selection.id : null,
+    selectedSectionId: selection?.kind === "section" ? selection.id : null,
+    selectSection: (viewId, index) => onSelect(index === null ? viewId : `${viewId}::${index}`, index === null ? undefined : { device }),
     setInteractive,
     rename: (id, name) => api.config({ names: { [id]: name } }),
     setParam: (route, url) => api.config({ params: { [route]: url } }),
@@ -229,18 +235,8 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
           proOptions={{ hideAttribution: true }}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="var(--paper-dot)" />
-          <MiniMap
-            pannable
-            zoomable
-            position="bottom-right"
-            nodeColor={(n) => (n.id === selectedId ? cssVar("--scope") : agentsByView.has(n.id) ? cssVar("--agent") : n.type === "group" ? "transparent" : cssVar("--input"))}
-            nodeStrokeColor={(n) => (n.id === selectedId ? cssVar("--foreground") : cssVar("--wire"))}
-            nodeStrokeWidth={4}
-            maskColor="color-mix(in oklab, var(--paper) 70%, transparent)"
-            ariaLabel="Mini map"
-          />
           <Panel position="top-left" className="!m-3">
-            <CanvasToolbar manifest={manifest} />
+            <CanvasToolbar manifest={manifest} onFit={() => fitAll()} onCenter={zoomToCenter} />
           </Panel>
           {pickingId && (
             <Panel position="top-center" className="!mt-3">
@@ -269,27 +265,48 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
   );
 }
 
-function CanvasToolbar({ manifest }: { manifest: Manifest }) {
-  const { zoom } = useViewport();
+function Tip({ label, children }: { label: React.ReactNode; children: React.ReactElement }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border bg-background p-1 shadow-[0_2px_8px_-4px_rgba(28,34,48,.25)]">
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** View options for the canvas, kept to one quiet row of icons. */
+function CanvasToolbar({ manifest, onFit, onCenter }: { manifest: Manifest; onFit: () => void; onCenter: () => void }) {
+  const { zoom } = useViewport();
+  const sep = <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />;
+  return (
+    <div className="flex items-center gap-0.5 rounded-lg border bg-background/95 p-0.5 shadow-[0_2px_10px_-6px_rgba(0,0,0,.35)] backdrop-blur">
       <ToggleGroup type="single" value={manifest.mode} onValueChange={(v) => v && api.config({ mode: v })} aria-label="Layout">
-        <ToggleGroupItem value="sitemap" aria-label="Sitemap layout"><TreeStructure size={14} /> Sitemap</ToggleGroupItem>
-        <ToggleGroupItem value="flow" aria-label="Flow layout"><FlowArrow size={14} /> Flow</ToggleGroupItem>
+        <Tip label="Sitemap: pages as a tree by URL"><ToggleGroupItem value="sitemap" aria-label="Sitemap layout"><TreeStructure size={15} /></ToggleGroupItem></Tip>
+        <Tip label="Flow: screens connected by their links"><ToggleGroupItem value="flow" aria-label="Flow layout"><FlowArrow size={15} /></ToggleGroupItem></Tip>
       </ToggleGroup>
+      {sep}
       <ToggleGroup type="single" value={manifest.frameHeight} onValueChange={(v) => v && api.config({ frameHeight: v })} aria-label="Frame height">
-        <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="viewport" aria-label="Show one screen of each page"><Rectangle size={14} /> Screen</ToggleGroupItem></TooltipTrigger><TooltipContent>First screen of each page</TooltipContent></Tooltip>
-        <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="full" aria-label="Show full pages"><ArrowsVertical size={14} /> Full page</ToggleGroupItem></TooltipTrigger><TooltipContent>Every page at its full length</TooltipContent></Tooltip>
+        <Tip label="First screen of each page"><ToggleGroupItem value="viewport" aria-label="Show one screen of each page"><Rectangle size={15} /></ToggleGroupItem></Tip>
+        <Tip label="Full pages"><ToggleGroupItem value="full" aria-label="Show full pages"><ArrowsVertical size={15} /></ToggleGroupItem></Tip>
       </ToggleGroup>
+      {sep}
       <ToggleGroup type="single" value={manifest.frameLayer} onValueChange={(v) => v && api.config({ frameLayer: v })} aria-label="Layer">
-        <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="live" aria-label="Live pages"><Browser size={14} /> Live</ToggleGroupItem></TooltipTrigger><TooltipContent>Pages as they look</TooltipContent></Tooltip>
-        <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="wireframe" aria-label="Wireframes"><Layout size={14} /> Wireframe</ToggleGroupItem></TooltipTrigger><TooltipContent>Structure only: text as bars, images as boxes</TooltipContent></Tooltip>
+        <Tip label="Design: pages as they look"><ToggleGroupItem value="live" aria-label="Design layer"><Browser size={15} /></ToggleGroupItem></Tip>
+        <Tip label="Wireframe: gray layout only"><ToggleGroupItem value="wireframe" aria-label="Wireframe layer"><Layout size={15} /></ToggleGroupItem></Tip>
       </ToggleGroup>
+      {sep}
       <ToggleGroup type="single" value={manifest.viewport} onValueChange={(v) => v && api.config({ viewport: v })} aria-label="Frame size">
-        <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="desktop" aria-label="Desktop frames"><Desktop size={14} /></ToggleGroupItem></TooltipTrigger><TooltipContent>Desktop · 1440</TooltipContent></Tooltip>
-        <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="mobile" aria-label="Mobile frames"><DeviceMobile size={14} /></ToggleGroupItem></TooltipTrigger><TooltipContent>Mobile · 390</TooltipContent></Tooltip>
+        <Tip label="Desktop, 1440 wide"><ToggleGroupItem value="desktop" aria-label="Desktop frames"><Desktop size={15} /></ToggleGroupItem></Tip>
+        <Tip label="Mobile, 390 wide"><ToggleGroupItem value="mobile" aria-label="Mobile frames"><DeviceMobile size={15} /></ToggleGroupItem></Tip>
       </ToggleGroup>
-      <span className="w-10 pr-1 text-right text-xs tabular-nums text-muted-foreground" aria-live="off">{Math.round(zoom * 100)}%</span>
+      {sep}
+      <Tip label={<>Show whole project <Kbd>⇧1</Kbd></>}>
+        <Button variant="ghost" size="icon" className="size-7" onClick={onFit} aria-label="Zoom to fit the whole project"><ArrowsOut size={15} /></Button>
+      </Tip>
+      <Tip label={<>Zoom to the view in the center <Kbd>⇧2</Kbd></>}>
+        <Button variant="ghost" size="icon" className="size-7" onClick={onCenter} aria-label="Zoom in to the view in the center"><Crosshair size={15} /></Button>
+      </Tip>
+      <span className="w-10 pr-1.5 text-right text-xs tabular-nums text-muted-foreground" aria-live="off">{Math.round(zoom * 100)}%</span>
     </div>
   );
 }
