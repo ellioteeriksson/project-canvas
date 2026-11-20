@@ -17,11 +17,12 @@ import { ShipButton } from "@/components/ship-button";
 import { SettingsPopover } from "@/components/settings-popover";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AgentIndicator } from "@/components/agent-indicator";
+import { PromptBar } from "@/components/prompt-bar";
 
 type Tab = "canvas" | "sections" | "design";
 
 export default function App() {
-  const { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots } = useCanvasData();
+  const { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots, chat } = useCanvasData();
   const [tab, setTab] = useState<Tab>("canvas");
   const [dsSection, setDsSection] = useState<DsSection>("tokens");
   const [sidebar, setSidebar] = useState(true);
@@ -145,6 +146,12 @@ export default function App() {
             ) : (
               <DesignSystemView manifest={manifest} section={dsSection} selectedId={selectedId} onSelect={select} onOpenView={openView} />
             )}
+            <PromptBar
+              chat={chat}
+              agents={agents}
+              selection={selection}
+              scopeName={selectionName ? (selection?.kind === "section" || selection?.kind === "elements" ? `${selectionName} on ${selection.viewName}` : selectionName) : null}
+            />
             {!connected && (
               <div role="status" className="absolute top-3 left-1/2 -translate-x-1/2 rounded-md border bg-background px-3 py-1.5 text-muted-foreground shadow-sm">
                 Lost connection to the canvas server. Reconnecting…

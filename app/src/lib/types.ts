@@ -44,3 +44,12 @@ export type PickedElement = {
   kind: string; tag: string; id: string | null; selector: string; text: string | null; href: string | null;
   component: string | null; section: string | null; top: number; left: number; width: number; height: number; html: string;
 };
+export type ChatStatus = "live" | "listening" | "busy" | "idle" | "offline";
+export type ChatConn = { id: string; status: ChatStatus; live: boolean; session: string | null; label: string | null; last: number; connectedAt: number };
+export type CanvasPrompt = {
+  id: string; conn: string; session: string | null; text: string; scope: string;
+  status: "queued" | "sending" | "delivered" | "done" | "failed" | "cancelled";
+  via?: "live" | "listen" | "stop" | "prompt"; reply?: string; note?: string; at: number; deliveredAt?: number; doneAt?: number;
+};
+export type PermissionRequest = { request_id: string; conn: string; tool_name: string; description: string; input_preview: string; at: number };
+export type ChatState = { conns: ChatConn[]; prompts: CanvasPrompt[]; permissions: PermissionRequest[] };

@@ -89,7 +89,7 @@ export function SectionsView({ manifest, snapshots, selectedId, onSelect, onShow
             <p className="mt-1 text-muted-foreground">Sections are found while the canvas renders each page. Open the Canvas tab and let the snapshots finish. Pages that use <code className="font-mono">&lt;section&gt;</code>, <code className="font-mono">&lt;header&gt;</code> and <code className="font-mono">&lt;footer&gt;</code> give the best results.</p>
           </div>
         ) : group === "page" ? (
-          <div className="flex gap-6 overflow-x-auto p-6">
+          <div className="flex gap-6 overflow-x-auto p-6 pb-44">
             {pages.filter((p) => p.items.some(match)).map((p) => (
               <section key={p.view.id} id={`sections-${p.view.id}`} className="w-[260px] shrink-0" aria-label={p.view.name}>
                 <header className="mb-2 flex items-center gap-1.5">
@@ -106,7 +106,7 @@ export function SectionsView({ manifest, snapshots, selectedId, onSelect, onShow
             ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-8 p-6">
+          <div className="flex flex-col gap-8 p-6 pb-44">
             {groups.filter(([, items]) => items.some(match)).map(([name, items]) => (
               <section key={name} aria-label={name}>
                 <h2 className="mb-2 flex items-baseline gap-2 text-[13px] font-semibold">

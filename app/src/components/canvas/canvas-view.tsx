@@ -239,7 +239,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
             maskColor="color-mix(in oklab, var(--paper) 70%, transparent)"
             ariaLabel="Mini map"
           />
-          <Panel position="bottom-left" className="!m-3">
+          <Panel position="top-left" className="!m-3">
             <CanvasToolbar manifest={manifest} />
           </Panel>
           {pickingId && (

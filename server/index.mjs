@@ -14,6 +14,8 @@ import { IGNORE_DIRS } from "./scan/fsutil.mjs";
 import { gitStatus, ship, aiMessage, heuristicMessage } from "./git.mjs";
 import { createFrameProxy, serveHelper, HELPER_TAG } from "./proxy.mjs";
 import { createSnapshotStore, computeChangedAt } from "./snapshots.mjs";
+import { createChannelHub } from "./channel.mjs";
+import { buildScope } from "../scripts/scope.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(HERE, "..", "app", "dist");
@@ -153,6 +155,22 @@ function broadcast(event, data) {
   for (const res of clients) res.write(msg);
 }
 
+/* ---------------- prompts from the canvas ---------------- */
+function scopeLabel(sel) {
+  if (!sel) return "Whole project";
+  if (sel.kind === "section" || sel.kind === "elements") return `${sel.name} on ${sel.viewName}`;
+  return sel.name;
+}
+const hub = createChannelHub({
+  root: ROOT,
+  broadcast: (e, d) => broadcast(e, d),
+  scopeFor: () => {
+    const sel = readState().selection;
+    return { label: scopeLabel(sel), scope: buildScope(sel, manifest) };
+  },
+  isBusy: (session) => [...agents.values()].some((a) => a.session === session),
+});
+
 /* ---------------- watcher ---------------- */
 let timer = null;
 function startWatcher() {
@@ -211,6 +229,8 @@ async function handle(req, res) {
   const url = new URL(req.url, "http://localhost");
   const p = url.pathname;
 
+  // Only answer to localhost names (blocks DNS-rebinding pages from reaching the API)
+  if (p.startsWith("/api/") && !/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(String(req.headers.host || ""))) return send(res, 403, { error: "forbidden" });
   // Same-origin guard for mutating requests (server only listens on 127.0.0.1 too)
   if (req.method !== "GET") {
     const origin = req.headers.origin;
@@ -224,6 +244,7 @@ async function handle(req, res) {
     res.write(`event: frames\ndata: ${JSON.stringify(frameStatus)}\n\n`);
     res.write(`event: activity\ndata: ${JSON.stringify(activityList())}\n\n`);
     res.write(`event: snapshots\ndata: ${JSON.stringify(snapshots.index)}\n\n`);
+    res.write(`event: chat\ndata: ${JSON.stringify(hub.summary())}\n\n`);
     clients.add(res);
     const ping = setInterval(() => res.write(": ping\n\n"), 20_000);
     req.on("close", () => { clients.delete(res); clearInterval(ping); });
@@ -258,6 +279,26 @@ async function handle(req, res) {
     recordActivity(await readBody(req));
     return send(res, 200, { ok: true });
   }
+  /* prompts: MCP server (one per Claude Code chat) and hooks */
+  if (p === "/api/channel/stream") return hub.stream(req, res, url);
+  if (req.method === "POST" && p.startsWith("/api/channel/")) {
+    const b = await readBody(req);
+    const r = {
+      "/api/channel/waiting": () => hub.waiting(b.conn, b.waiting),
+      "/api/channel/ack": () => hub.ack(b.conn, b.id, b.via),
+      "/api/channel/requeue": () => hub.requeue(b.conn, b.id),
+      "/api/channel/reply": () => hub.reply(b.conn, b.id, b.text),
+      "/api/channel/permission": () => hub.permissionRequest(b.conn, b),
+      "/api/channel/claim": () => hub.claim(b),
+    }[p];
+    return r ? send(res, 200, r()) : send(res, 404, { error: "unknown" });
+  }
+  /* prompts: canvas UI */
+  if (req.method === "POST" && p === "/api/prompt") { const b = await readBody(req); const r = hub.submit(b); return send(res, r.ok ? 200 : 400, r); }
+  if (req.method === "POST" && p === "/api/prompt/cancel") return send(res, 200, hub.cancel((await readBody(req)).id));
+  if (req.method === "POST" && p === "/api/prompt/clear") return send(res, 200, hub.clear());
+  if (req.method === "POST" && p === "/api/permission") { const b = await readBody(req); return send(res, 200, hub.verdict(b.request_id, b.behavior)); }
+
   if (p === "/api/state") return send(res, 200, { ...readState(), version: VERSION });
 
   if (p === "/api/selection" && req.method === "POST") {
@@ -327,6 +368,8 @@ function pushActivity() {
 }
 
 function recordActivity(ev) {
+  hub.activity(ev);
+  if (ev.phase === "hello") return;
   const key = ev.agent || ev.session;
   const now = Date.now();
   if (ev.phase === "done") {
@@ -355,6 +398,7 @@ function recordActivity(ev) {
   agents.set(key, a);
   if (ev.phase === "edited") broadcast("edited", { file: ev.file, views: a.views, global: a.global, at: now });
   pushActivity();
+  hub.push();
 }
 
 // Forget agents that went quiet without a Stop event (crash, cancelled turn)
@@ -362,7 +406,7 @@ setInterval(() => {
   const now = Date.now();
   let changed = false;
   for (const [k, a] of agents) if (now - a.last > 120_000) { agents.delete(k); changed = true; }
-  if (changed) pushActivity();
+  if (changed) { pushActivity(); hub.push(); }
 }, 10_000).unref();
 
 let statusTimer = null;

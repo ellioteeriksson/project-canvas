@@ -29,7 +29,7 @@ type Props = {
 export function DesignSystemView({ manifest, section, selectedId, onSelect, onOpenView }: Props) {
   return (
     <ScrollArea className="h-full bg-paper">
-      <div className="mx-auto max-w-[1180px] px-8 py-8">
+      <div className="mx-auto max-w-[1180px] px-8 pt-8 pb-44">
         {section === "tokens" ? (
           <Tokens manifest={manifest} />
         ) : (

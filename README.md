@@ -9,6 +9,7 @@ A Claude Code plugin that lays out every page or screen of your project on a liv
 - **See Claude work:** while an agent reads or edits a view, its frame gets an orange ring and goes live, then the snapshot refreshes when it's done.
 - **Light, dark or system** theme for the canvas.
 - **Select a view, and your next prompt in Claude Code only affects that view.** Select nothing, and it affects the whole project.
+- **Prompt from the canvas:** the prompt bar at the bottom sends a prompt straight to the Claude Code chat open in the project, with the current selection as its scope. Claude's answer and what it's doing show up in the canvas, so you don't have to switch windows.
 - A **Design system** tab shows your tokens, primitives (`components/ui`) and components, and which views use each one. Selecting a component scopes your prompts to it.
 - A **Ship** button at the top commits, pushes or opens a pull request.
 
@@ -43,21 +44,23 @@ The first time, Claude reads what was detected, checks whether the project is a 
 
 | What you do | What happens |
 | --- | --- |
-| Click a frame or a row in the list | Your prompts are scoped to that view (highlighted in yellow). Esc or click the background to clear it. |
+| Click a frame or a row in the list | Your prompts are scoped to that view (highlighted in blue). Esc or click the background to clear it. |
 | Double-click a frame, or hover and click **Interact** | Use the live page inside the canvas. Esc exits. |
 | Hover a frame → **Select elements** | Pick buttons, text, images or blocks. Click selects, Shift-click adds, ↑ ↓ parent/child, Esc finishes. Prompts then only affect those elements. |
-| Screen / Full page, Live / Wireframe | Change the frame height or layer (bottom toolbar). |
+| Screen / Full page, Live / Wireframe | Change the frame height or layer (toolbar at the top left of the canvas). |
 | ☾ in the top bar | Light, dark, or match system. |
 | Double-click a name | Rename the view. |
 | ⤢ / Shift+1 | Zoom out to show the whole project. |
 | ⌖ / Shift+2 | Zoom in on the view closest to the centre of the screen. |
-| Sitemap / Flow, Desktop / Mobile | Switch the layout or the frame size (bottom-left). |
+| Sitemap / Flow, Desktop / Mobile | Switch the layout or the frame size (same toolbar). |
 | Drag frames | Your layout is saved. Use Settings → Reset layout to undo it. |
+| Prompt bar / ⌘K | Send a prompt to the Claude Code chat open in this project. It's scoped to what's selected. Click the speech bubble to see earlier prompts and Claude's answers. |
 | Ship ▾ | Commit, commit & push, or commit + push + open a PR. If you're on `main`, it creates a branch first. **Write with Claude** drafts the commit message from the diff. |
 
 ### Commands
 
 - `/canvas`: open the canvas, or reopen it if it's already running
+- `/canvas-listen`: let this chat take prompts from the canvas prompt bar right away (see below)
 - `/canvas-stop`: stop the server
 - `/canvas-preview`: add a dev-only `/__canvas` route so the Design system tab shows live component previews
 
@@ -68,8 +71,30 @@ The first time, Claude reads what was detected, checks whether the project is a 
 | `UserPromptSubmit` | Adds a `<project-canvas-scope>` note to each prompt: the selected view, its route, files that belong only to it, files shared with other views, and its preview URL. |
 | `PreToolUse` (Edit/Write) | Asks you before Claude edits a file outside the selection. Set `"scopeGuard": "off"` in `.canvas/config.json` to turn this off. |
 | `SessionStart` | Tells Claude where the plugin lives and whether a canvas is open. |
+| `Stop`, `UserPromptSubmit` | Hand over prompts sent from the canvas while Claude was busy or the chat was idle. |
 
 When no canvas is running, the hooks do nothing.
+
+### Prompting from the canvas
+
+Every Claude Code chat with the plugin connects itself to the project's canvas, and shows up in the prompt bar's chat picker (labelled with the last thing you asked it). A prompt sent from the canvas reaches that chat by the first route that works:
+
+| Chat state | How the prompt gets there |
+| --- | --- |
+| **Live** (started with channels, see below) | Straight into the chat, even when it's idle. Permission prompts also show up in the canvas, with Allow and Deny. |
+| **Listening** (`/canvas-listen`) | Claude waits for canvas prompts and picks them up right away. Works in the desktop app. Interrupt Claude to type in the chat again. |
+| **Working** | Claude takes it as soon as it finishes what it's doing. |
+| **Idle** | It rides along with the next message you type in the chat. |
+
+Claude answers in the canvas with a short summary of what it changed, and the prompt shows what Claude is doing while it works.
+
+**Live mode** uses Claude Code [channels](https://code.claude.com/docs/en/channels), a research preview that needs Claude Code 2.1.80+ and a claude.ai or Console login (Team and Enterprise admins must turn channels on). Custom channels aren't on Anthropic's allowlist yet, so start the terminal session with the development flag:
+
+```bash
+claude --dangerously-load-development-channels plugin:project-canvas@project-canvas
+```
+
+Claude Code asks you to confirm once at startup. In the desktop app, use `/canvas-listen` instead.
 
 ## Supported projects
 

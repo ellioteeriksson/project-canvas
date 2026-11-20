@@ -4,6 +4,7 @@
 // Fire-and-forget: never prints anything and never holds Claude up for more than ~400ms.
 import path from "node:path";
 import { readStdin, activeCanvas } from "./lib.mjs";
+import { sessionClaudePid } from "./proc.mjs";
 
 const input = await readStdin();
 const c = activeCanvas(input.cwd);
@@ -15,7 +16,8 @@ const ti = input.tool_input || {};
 const file = ti.file_path || ti.notebook_path || null;
 
 let phase = null;
-if (event === "UserPromptSubmit") phase = "thinking";
+if (event === "SessionStart") phase = "hello";
+else if (event === "UserPromptSubmit") phase = "thinking";
 else if (event === "PreToolUse") {
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool)) phase = "editing";
   else if (tool === "Read") phase = "reading";
@@ -33,6 +35,9 @@ const body = {
   file: file ? path.relative(c.root, path.resolve(input.cwd || c.root, file)).split(path.sep).join("/") : null,
   command: tool === "Bash" ? String(ti.description || ti.command || "").slice(0, 80) : null,
   at: Date.now(),
+  // Which Claude Code process this is, so the canvas can pair the session with its prompt channel
+  claudePid: sessionClaudePid(input.session_id),
+  prompt: event === "UserPromptSubmit" ? String(input.prompt || "").replace(/\s+/g, " ").slice(0, 90) : undefined,
 };
 
 try {

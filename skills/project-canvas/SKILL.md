@@ -93,6 +93,15 @@ Hover a frame and click **Select elements** to pick specific buttons, links, hea
 
 The `<project-canvas-scope>` block then lists each element with its kind, its text, a CSS selector, the section it sits in, and the component and file that render it, when known. Change only those elements. Use the text and component to find them in the code, since selectors from the rendered DOM rarely appear in the source as-is.
 
+## Prompts from the canvas
+
+The canvas has a prompt bar that sends prompts to a Claude Code chat open in the project. The plugin's MCP server (`server/mcp.mjs`, one per chat) connects the chat to the canvas.
+
+- A canvas prompt arrives as a `<channel source="…" prompt_id="…">` event (live mode), as the result of `canvas_wait` (listen mode, `/canvas-listen`), from the Stop hook when you finish a turn, or as extra context on the user's next message. In every case it contains `<canvas-prompt prompt_id="…">` with the user's words and a `<project-canvas-scope>` block. Treat it as a message from the user and respect the scope.
+- When it's done, call `canvas_reply` with the `prompt_id` and a 1–3 sentence summary in the language of the prompt. The user reads that in the canvas, not in the chat.
+- Only call `canvas_wait` when the user asked you to listen (`/canvas-listen`) or a `canvas_wait` result says to call it again.
+- History is kept in `.canvas/chat.json` (ignored by git). The canvas pairs chats with hook events by Claude Code's process id.
+
 ## Agent activity layer
 
 Hooks report what Claude is doing to the canvas: thinking, reading, editing or running a command. The canvas shows it on the views the file belongs to, with an animated ring in Claude's orange, a chip such as "Claude · Editing page.tsx", a dot in the views list and a status in the top bar. Edits to global files (layouts, global CSS) show on every frame. When Claude finishes, the affected snapshots are retaken and flagged "Updated". This needs no action from you, so carry on working normally.
