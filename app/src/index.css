@@ -119,3 +119,34 @@
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------- Agent activity layer ---------- */
+:root { --agent: #6d5dfc; --agent-soft: #c9c2ff; }
+.dark { --agent: #8f84ff; --agent-soft: #4a4296; }
+@property --agent-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes agent-spin { to { --agent-angle: 360deg; } }
+@keyframes agent-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@keyframes updated-fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+.agent-ring {
+  position: absolute;
+  inset: calc(-5px * var(--title-scale, 1));
+  border-radius: calc(9px * var(--title-scale, 1));
+  padding: calc(3px * var(--title-scale, 1));
+  background: conic-gradient(from var(--agent-angle), transparent 0 55%, var(--agent-soft) 70%, var(--agent) 82%, transparent 96%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: agent-spin 2.2s linear infinite;
+  pointer-events: none;
+}
+.agent-ring::after {
+  content: ""; position: absolute; inset: calc(2px * var(--title-scale, 1)); border-radius: inherit;
+  box-shadow: 0 0 0 calc(1.5px * var(--title-scale, 1)) color-mix(in oklab, var(--agent) 45%, transparent);
+}
+.agent-ring[data-global] { animation: none; background: none; }
+.agent-dot { animation: agent-pulse 1.4s ease-in-out infinite; }
+.updated-chip { animation: updated-fade 2.2s ease-out forwards; }
+@media (prefers-reduced-motion: reduce) {
+  .agent-ring { animation: none; background: var(--agent); }
+  .agent-dot { animation: none; }
+}

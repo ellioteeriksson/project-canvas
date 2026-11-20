@@ -13,11 +13,13 @@ import { ViewsSidebar, DesignSystemSidebar, type DsSection } from "@/components/
 import { DesignSystemView } from "@/components/design-system/design-system-view";
 import { ShipButton } from "@/components/ship-button";
 import { SettingsPopover } from "@/components/settings-popover";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { AgentIndicator } from "@/components/agent-indicator";
 
 type Tab = "canvas" | "design";
 
 export default function App() {
-  const { manifest, state, git, connected, refreshGit, setState, frames } = useCanvasData();
+  const { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots } = useCanvasData();
   const [tab, setTab] = useState<Tab>("canvas");
   const [dsSection, setDsSection] = useState<DsSection>("tokens");
   const [sidebar, setSidebar] = useState(true);
@@ -81,6 +83,7 @@ export default function App() {
           </Tabs>
 
           <div className="ml-auto flex items-center gap-1.5">
+            <AgentIndicator agents={agents} manifest={manifest} onFocus={(id) => { setTab("canvas"); setTimeout(() => canvas.current?.focus(id), 60); }} />
             <ScopeChip name={selectionName} kind={selection?.kind} onClear={() => select(null)} />
             <Separator orientation="vertical" className="mx-1" />
             {tab === "canvas" && (
@@ -99,6 +102,7 @@ export default function App() {
                 </Tooltip>
               </>
             )}
+            <ThemeToggle />
             <SettingsPopover manifest={manifest} />
             <ShipButton git={git} onDone={refreshGit} />
           </div>
@@ -110,6 +114,7 @@ export default function App() {
               {tab === "canvas" ? (
                 <ViewsSidebar
                   manifest={manifest}
+                  activeViews={new Set(agents.flatMap((a) => a.views))}
                   selectedId={selectedId}
                   onPick={(id, isGroup) => { if (!isGroup) select(id); canvas.current?.focus(id); }}
                 />
@@ -120,7 +125,7 @@ export default function App() {
           </aside>
           <main className="relative min-w-0 flex-1 bg-paper">
             {tab === "canvas" ? (
-              <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} />
+              <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} agents={agents} edits={edits} snapshots={snapshots} />
             ) : (
               <DesignSystemView manifest={manifest} section={dsSection} selectedId={selectedId} onSelect={select} onOpenView={openView} />
             )}

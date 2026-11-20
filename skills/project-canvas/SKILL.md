@@ -41,6 +41,7 @@ The server watches the project and rescans on every save. **Edit `config.json` a
   "devUrl": "http://localhost:3000",         // where frames load from
   "viewport": "desktop",                     // desktop | mobile frames
   "frameHeight": "viewport",                 // "viewport" (one screen) | "full" (every page at full length)
+  "frameLayer": "live",                      // "live" (pages as they look) | "wireframe" (text as bars, images as boxes)
   "frameConcurrency": 3,                     // how many frames load at once (dev servers compile routes on demand)
   "proxy": true,                             // false = load frames straight from devUrl instead of through the frame proxy
   "names": { "/": "Home", "/pricing": "Pricing" },        // display names by route
@@ -67,14 +68,20 @@ Always **merge** into `config.json`. Read it, change the keys you need, and writ
 6. **Dev server:** frames need it running. If `devUrl` doesn't answer, tell the user the exact command (`npm run dev`). Don't start long-running servers without asking. Plain HTML projects are served by the canvas itself.
 7. Suggest committing `.canvas/config.json` (the server already gitignores `state.json` and `manifest.json`).
 
-## How frames load (for debugging blank or broken frames)
+## How frames render (for debugging blank, stale or broken frames)
 
-- Frames don't load `devUrl` directly. They go through a **frame proxy** on the next free port after the canvas (`manifest.frameUrl`). The proxy strips `X-Frame-Options` and CSP `frame-ancestors`, passes hot-reload websockets through, and injects a small helper (`/__canvas_frame.js`). Nothing in the project changes.
-- The helper reports each page's full height (for **Full page** mode) and freezes `vh`/`svh`/`dvh` units at one screen, so `100vh` heroes keep their real size. It also reports runtime errors, which show as an amber bar on the frame.
-- Each frame shows the HTTP status the proxy saw: a red bar for 404, 500, or an unreachable dev server. A 404 usually means the route needs a sample URL (`params`) or the scanner picked up a route that doesn't exist (`hidden`).
-- Frames load a few at a time (`frameConcurrency`) so Next.js doesn't have to compile every route at once.
-- Plain HTML projects are served by the canvas's own static server, with the same helper.
-- If a page uses JavaScript to size itself from `window.innerHeight`, full-page mode can't freeze that. Say so if a frame looks stretched.
+- **Snapshots by default.** Every view is shown as a static image of the full page, so all views stay visible at any zoom. Snapshots are cached in `.canvas/snapshots/` (gitignored) per view, device and layer.
+- **When a snapshot is retaken:** whenever a view's files (its page, its imports, shared files, global CSS and layouts) are newer than its snapshot. That's checked by modification time, so edits made while the canvas was closed count too. Content that changes outside the code (a CMS, a database) needs **Settings → Refresh snapshots**.
+- **Live pages appear only** when the user interacts with a frame (double-click or **Interact**), or while an agent is working on that view, so edits stream in. Otherwise they load invisibly just long enough to take the snapshot.
+- **How a snapshot is made:** the frame loads through a **frame proxy** (`manifest.frameUrl`) that strips `X-Frame-Options` and CSP `frame-ancestors` and passes hot-reload websockets through. The proxy injects a helper (`/__canvas_frame.js`) that scrolls through the page once (so scroll-triggered animations and lazy images run), waits for fonts and images, and renders the DOM to an image. Next.js, Vite and Astro dev overlays are left out. Nothing in the project changes.
+- **Wireframe layer:** the helper restyles the page (text as gray bars, images as flat boxes, outlined buttons and sections) before the snapshot, so wireframe snapshots are separate images.
+- **Status bars on frames:** red means the proxy saw a 404, a 500, or an unreachable dev server. A 404 usually means the route needs a sample URL (`params`) or doesn't really exist (`hidden`). Amber means a runtime error in the page.
+- **Known gaps:** content drawn by WebGL or video, iframes inside the page, and images from servers that block cross-origin requests may show up blank in snapshots, but they look right in the live view. Pages that hijack scrolling (smooth-scroll libraries, pinned GSAP sections) can render oddly.
+- Frames load a few at a time (`frameConcurrency`) so Next.js doesn't compile every route at once.
+
+## Agent activity layer
+
+Hooks report what Claude is doing to the canvas: thinking, reading, editing or running a command. The canvas shows it on the views the file belongs to, with an animated violet ring, a chip such as "Claude · Editing page.tsx", a dot in the views list and a status in the top bar. Edits to global files (layouts, global CSS) show on every frame. When Claude finishes, the affected snapshots are retaken and flagged "Updated". This needs no action from you, so carry on working normally.
 
 ## Detection details (for debugging an empty or wrong canvas)
 

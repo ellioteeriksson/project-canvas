@@ -13,6 +13,7 @@ import { scanProject, writeManifest, loadConfig, saveConfig, CANVAS_DIR } from "
 import { IGNORE_DIRS } from "./scan/fsutil.mjs";
 import { gitStatus, ship, aiMessage, heuristicMessage } from "./git.mjs";
 import { createFrameProxy, serveHelper, HELPER_TAG } from "./proxy.mjs";
+import { createSnapshotStore, computeChangedAt } from "./snapshots.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(HERE, "..", "app", "dist");
@@ -45,6 +46,8 @@ function pidAlive(pid) {
 
 let manifest = null;
 let lastSig = "";
+const snapshots = createSnapshotStore(ROOT);
+let refreshAt = 0; // "Refresh all snapshots" from settings
 let siteUrl = null; // static server for plain-HTML projects
 let proxyUrl = null; // frame proxy in front of the dev server
 const frameStatus = {}; // path -> { status, ms, error } for the last page load seen by the proxy
@@ -54,6 +57,8 @@ function rescan(reason = "") {
     if (m.devUrl === "/__site" && siteUrl) m.devUrl = siteUrl;
     // Frames load through the proxy (or the static server for plain HTML) unless turned off
     m.frameUrl = m.devUrl === siteUrl ? siteUrl : loadConfig(ROOT).proxy === false || !proxyUrl ? m.devUrl : proxyUrl;
+    m.changedAt = computeChangedAt(ROOT, m);
+    m.changedAt["*"] = Math.max(m.changedAt["*"] || 0, refreshAt);
     const sig = JSON.stringify({ ...m, scannedAt: 0, scanMs: 0 });
     manifest = m;
     if (sig !== lastSig) {
@@ -164,6 +169,8 @@ async function handle(req, res) {
     res.write(`event: manifest\ndata: ${JSON.stringify(manifest)}\n\n`);
     res.write(`event: state\ndata: ${JSON.stringify(readState())}\n\n`);
     res.write(`event: frames\ndata: ${JSON.stringify(frameStatus)}\n\n`);
+    res.write(`event: activity\ndata: ${JSON.stringify(activityList())}\n\n`);
+    res.write(`event: snapshots\ndata: ${JSON.stringify(snapshots.index)}\n\n`);
     clients.add(res);
     const ping = setInterval(() => res.write(": ping\n\n"), 20_000);
     req.on("close", () => { clients.delete(res); clearInterval(ping); });
@@ -171,6 +178,32 @@ async function handle(req, res) {
     return;
   }
   if (p === "/api/manifest") return send(res, 200, manifest);
+  if (p === "/api/snapshot" && req.method === "POST") {
+    const body = await readBody(req);
+    try {
+      snapshots.put(body);
+      broadcast("snapshots", snapshots.index);
+      return send(res, 200, { ok: true });
+    } catch (e) {
+      return send(res, 400, { error: String(e.message) });
+    }
+  }
+  if (p === "/api/snapshots/refresh" && req.method === "POST") {
+    refreshAt = Date.now();
+    lastSig = "";
+    rescan("refresh snapshots");
+    return send(res, 200, { ok: true });
+  }
+  if (p.startsWith("/api/snapshots/")) {
+    const file = snapshots.filePath(p.slice("/api/snapshots/".length));
+    if (!file || !fs.existsSync(file)) return send(res, 404, "Not found", "text/plain");
+    res.writeHead(200, { "Content-Type": file.endsWith(".png") ? "image/png" : file.endsWith(".jpg") ? "image/jpeg" : "image/webp", "Cache-Control": "public, max-age=31536000, immutable" });
+    return fs.createReadStream(file).pipe(res);
+  }
+  if (p === "/api/activity" && req.method === "POST") {
+    recordActivity(await readBody(req));
+    return send(res, 200, { ok: true });
+  }
   if (p === "/api/state") return send(res, 200, { ...readState(), version: VERSION });
 
   if (p === "/api/selection" && req.method === "POST") {
@@ -214,6 +247,69 @@ async function handle(req, res) {
   const file = safeJoin(DIST, p === "/" ? "/index.html" : p);
   return serveFile(res, file, path.join(DIST, "index.html"));
 }
+
+/* ---------------- agent activity ---------------- */
+// key -> { key, session, label, phase, file, command, views, global, since, last }
+const agents = new Map();
+const GLOBAL_FILE = /(^|\/)(layout|template|globals?|root|app|_app|_document|tailwind\.config|next\.config|astro\.config|vite\.config)\.[a-z]+$|\.(css|scss)$/i;
+
+/** Which views does a file belong to? Global files (layouts, global CSS, configs) touch every view. */
+function viewsForFile(rel) {
+  if (!rel || !manifest || rel.startsWith("..")) return { views: [], global: false };
+  const views = new Set();
+  for (const v of manifest.views) if (v.file === rel || v.files?.includes(rel) || v.sharedFiles?.includes(rel)) views.add(v.id);
+  for (const c of manifest.designSystem.components) if (c.file === rel) c.usedBy.forEach((id) => views.add(id));
+  const global = !views.size && GLOBAL_FILE.test(rel);
+  return { views: [...views], global };
+}
+
+function activityList() {
+  return [...agents.values()].map(({ timer, ...a }) => a);
+}
+let activityTimer = null;
+function pushActivity() {
+  clearTimeout(activityTimer);
+  activityTimer = setTimeout(() => broadcast("activity", activityList()), 40);
+}
+
+function recordActivity(ev) {
+  const key = ev.agent || ev.session;
+  const now = Date.now();
+  if (ev.phase === "done") {
+    // Main session stopped: clear it and its subagents. Subagent stopped: clear just that one.
+    for (const [k, a] of agents) if (k === key || (!ev.subagent && a.session === ev.session)) agents.delete(k);
+    pushActivity();
+    return;
+  }
+  const prev = agents.get(key);
+  const sel = readState().selection;
+  const mapped = ev.file ? viewsForFile(ev.file) : null;
+  const a = {
+    key,
+    session: ev.session,
+    label: ev.agentType ? ev.agentType : "Claude",
+    sub: !!ev.agent,
+    phase: ev.phase === "edited" ? "editing" : ev.phase,
+    file: ev.file ?? (ev.phase === "thinking" ? null : prev?.file ?? null),
+    command: ev.command ?? null,
+    // While thinking, the agent works on the selected view (or the whole project)
+    views: mapped ? mapped.views : ev.phase === "thinking" ? (sel?.kind === "view" ? [sel.id] : sel?.usedBy ?? []) : prev?.views ?? [],
+    global: mapped ? mapped.global : ev.phase === "thinking" ? !sel : prev?.global ?? false,
+    since: prev && prev.phase === ev.phase ? prev.since : now,
+    last: now,
+  };
+  agents.set(key, a);
+  if (ev.phase === "edited") broadcast("edited", { file: ev.file, views: a.views, global: a.global, at: now });
+  pushActivity();
+}
+
+// Forget agents that went quiet without a Stop event (crash, cancelled turn)
+setInterval(() => {
+  const now = Date.now();
+  let changed = false;
+  for (const [k, a] of agents) if (now - a.last > 120_000) { agents.delete(k); changed = true; }
+  if (changed) pushActivity();
+}, 10_000).unref();
 
 let statusTimer = null;
 function recordStatus({ path: p, status, ms, error }) {

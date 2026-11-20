@@ -3,8 +3,9 @@ import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant, MiniMap, Panel,
   useReactFlow, useViewport, useNodesState, type Node, type NodeMouseHandler,
 } from "@xyflow/react";
-import { TreeStructure, FlowArrow, Desktop, DeviceMobile, LinkBreak, Copy, Check, Rectangle, ArrowsVertical } from "@phosphor-icons/react";
-import type { Manifest, FrameStatus } from "@/lib/types";
+import { TreeStructure, FlowArrow, Desktop, DeviceMobile, LinkBreak, Copy, Check, Rectangle, ArrowsVertical, Browser, Layout } from "@phosphor-icons/react";
+import type { Manifest, FrameStatus, Agent, SnapshotIndex } from "@/lib/types";
+import { snapshotKey } from "@/lib/api";
 import { setLoadLimit } from "@/lib/load-queue";
 import { api, useDevServer } from "@/lib/api";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -13,6 +14,11 @@ import { Button } from "@/components/ui/button";
 import { CanvasContext, type CanvasCtx } from "./context";
 import { buildGraph } from "./layout";
 import { FrameNode, GroupNode } from "./frame-node";
+
+/** SVG attributes can't use CSS variables, so read the current theme's value. */
+function cssVar(name: string) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#8d98a8";
+}
 
 export type CanvasHandle = {
   fitAll: () => void;
@@ -28,6 +34,9 @@ type Props = {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   frames: FrameStatus;
+  agents: Agent[];
+  edits: Record<string, number>;
+  snapshots: SnapshotIndex;
   ref?: Ref<CanvasHandle>;
 };
 
@@ -39,12 +48,18 @@ export function CanvasView(props: Props) {
   );
 }
 
-function CanvasInner({ manifest, selectedId, onSelect, frames, ref }: Props) {
+function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, ref }: Props) {
   const rf = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
   const mode = manifest.mode;
   const device = manifest.viewport;
   const full = manifest.frameHeight === "full";
+  const agentsByView = useMemo(() => {
+    const m = new Map<string, Agent[]>();
+    for (const a of agents) for (const v of a.views) m.set(v, [...(m.get(v) ?? []), a]);
+    return m;
+  }, [agents]);
+  const globalAgents = useMemo(() => agents.filter((a) => a.global), [agents]);
   // Measured page heights arrive one by one; apply them in batches so the layout doesn't jitter
   const [heights, setHeights] = useState<Record<string, number>>({});
   const pendingHeights = useRef<Record<string, number>>({});
@@ -63,7 +78,17 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, ref }: Props) {
     }, 350);
   }, []);
   useEffect(() => setLoadLimit(manifest.frameConcurrency || 3), [manifest.frameConcurrency]);
-  const graph = useMemo(() => buildGraph(manifest, mode, device, full ? heights : null), [manifest, mode, device, full, heights]);
+  // Full-page heights come from the snapshots (falling back to live measurements)
+  const layer = manifest.frameLayer === "wireframe" ? "wireframe" : "live";
+  const allHeights = useMemo(() => {
+    const out: Record<string, number> = { ...heights };
+    for (const v of manifest.views) {
+      const s = snapshots[snapshotKey(v.id, device, layer)] ?? snapshots[snapshotKey(v.id, device, layer === "live" ? "wireframe" : "live")];
+      if (s) out[v.id] = s.h;
+    }
+    return out;
+  }, [heights, snapshots, manifest.views, device, layer]);
+  const graph = useMemo(() => buildGraph(manifest, mode, device, full ? allHeights : null), [manifest, mode, device, full, allHeights]);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(graph.nodes);
   const [interactiveId, setInteractive] = useState<string | null>(null);
   const [showLive, setShowLive] = useState(true);
@@ -131,10 +156,10 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, ref }: Props) {
 
   // After switching to full-page frames, refit once the first page heights are in
   useEffect(() => {
-    if (!full || !fitAfterHeights.current || !Object.keys(heights).length) return;
+    if (!full || !fitAfterHeights.current || !Object.keys(allHeights).length) return;
     fitAfterHeights.current = false;
     setTimeout(() => fitRef.current(400), 60);
-  }, [heights, full]);
+  }, [allHeights, full]);
 
   useImperativeHandle(ref, () => ({ fitAll: () => fitAll(), zoomToCenter, focus }), [fitAll, zoomToCenter, focus]);
 
@@ -153,6 +178,8 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, ref }: Props) {
   const ctx: CanvasCtx = {
     manifest, device, selectedId, interactiveId, showLive, devUp, reloadKey,
     full, heights, frames, reportHeight,
+    wire: manifest.frameLayer === "wireframe",
+    agentsByView, globalAgents, edits, snapshots,
     frameBase: manifest.frameUrl || manifest.devUrl,
     select: onSelect,
     setInteractive,
@@ -189,7 +216,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, ref }: Props) {
           edgesFocusable={false}
           minZoom={0.04}
           maxZoom={4}
-          onlyRenderVisibleElements
+          onlyRenderVisibleElements={false}
           zoomOnDoubleClick={false}
           proOptions={{ hideAttribution: true }}
         >
@@ -198,10 +225,10 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, ref }: Props) {
             pannable
             zoomable
             position="bottom-right"
-            nodeColor={(n) => (n.id === selectedId ? "#ffd23f" : n.type === "group" ? "transparent" : "#c9d1db")}
-            nodeStrokeColor={(n) => (n.id === selectedId ? "#1c2230" : "#8d98a8")}
+            nodeColor={(n) => (n.id === selectedId ? "#ffd23f" : agentsByView.has(n.id) ? cssVar("--agent") : n.type === "group" ? "transparent" : cssVar("--input"))}
+            nodeStrokeColor={(n) => (n.id === selectedId ? cssVar("--foreground") : cssVar("--wire"))}
             nodeStrokeWidth={4}
-            maskColor="rgba(233,237,241,.7)"
+            maskColor="color-mix(in oklab, var(--paper) 70%, transparent)"
             ariaLabel="Mini map"
           />
           <Panel position="bottom-left" className="!m-3">
@@ -237,6 +264,10 @@ function CanvasToolbar({ manifest }: { manifest: Manifest }) {
       <ToggleGroup type="single" value={manifest.frameHeight} onValueChange={(v) => v && api.config({ frameHeight: v })} aria-label="Frame height">
         <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="viewport" aria-label="Show one screen of each page"><Rectangle size={14} /> Screen</ToggleGroupItem></TooltipTrigger><TooltipContent>First screen of each page</TooltipContent></Tooltip>
         <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="full" aria-label="Show full pages"><ArrowsVertical size={14} /> Full page</ToggleGroupItem></TooltipTrigger><TooltipContent>Every page at its full length</TooltipContent></Tooltip>
+      </ToggleGroup>
+      <ToggleGroup type="single" value={manifest.frameLayer} onValueChange={(v) => v && api.config({ frameLayer: v })} aria-label="Layer">
+        <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="live" aria-label="Live pages"><Browser size={14} /> Live</ToggleGroupItem></TooltipTrigger><TooltipContent>Pages as they look</TooltipContent></Tooltip>
+        <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="wireframe" aria-label="Wireframes"><Layout size={14} /> Wireframe</ToggleGroupItem></TooltipTrigger><TooltipContent>Structure only: text as bars, images as boxes</TooltipContent></Tooltip>
       </ToggleGroup>
       <ToggleGroup type="single" value={manifest.viewport} onValueChange={(v) => v && api.config({ viewport: v })} aria-label="Frame size">
         <Tooltip><TooltipTrigger asChild><ToggleGroupItem value="desktop" aria-label="Desktop frames"><Desktop size={14} /></ToggleGroupItem></TooltipTrigger><TooltipContent>Desktop · 1440</TooltipContent></Tooltip>

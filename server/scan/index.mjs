@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
-import { read, rel, readJSON, humanize, isDynamicSegment } from "./fsutil.mjs";
+import { read, rel, readJSON, humanize, isDynamicSegment, walk } from "./fsutil.mjs";
 import { createResolver, buildGraph, closure, extractLinks, normalizeHref } from "./graph.mjs";
 import { detectFramework, defaultDevUrl, discoverRoutes } from "./routes.mjs";
 import { scanDesignSystem } from "./designsystem.mjs";
@@ -153,6 +153,17 @@ export function scanProject(root, config = loadConfig(root)) {
   }
 
   const ds = scanDesignSystem(root, { views, graph, viewClosures, resolve });
+
+  // Files that affect every view (layouts, app shells): used to know when all snapshots are stale
+  const globalFiles = [];
+  for (const base of ["app", "src/app", "pages", "src/pages", "src/layouts", "src"]) {
+    const dir = path.join(root, base);
+    if (!fs.existsSync(dir)) continue;
+    for (const f of walk(dir, { filter: (p) => /[\\/](layout|template|_app|_document|root|__root|Layout|BaseLayout)\.(tsx?|jsx?|astro)$/.test(p), maxDepth: base === "src" ? 1 : 8 })) {
+      const r = rel(root, f);
+      if (!globalFiles.includes(r)) globalFiles.push(r);
+    }
+  }
   const pkg = readJSON(path.join(root, "package.json"), {});
 
   return {
@@ -165,11 +176,13 @@ export function scanProject(root, config = loadConfig(root)) {
     previewRoute: config.previewRoute || null,
     positions: config.positions || {},
     frameHeight: config.frameHeight === "full" ? "full" : "viewport",
+    frameLayer: config.frameLayer === "wireframe" ? "wireframe" : "live",
     frameConcurrency: Math.max(1, Math.min(12, Number(config.frameConcurrency) || 3)),
     views,
     groups: [...groups.values()],
     edges: { tree: treeEdges, links: [...linkEdges.values()] },
     designSystem: ds,
+    globalFiles,
     scannedAt: new Date().toISOString(),
     scanMs: Date.now() - t0,
   };
@@ -179,7 +192,8 @@ export function writeManifest(root, manifest) {
   const dir = path.join(root, CANVAS_DIR);
   fs.mkdirSync(dir, { recursive: true });
   const gi = path.join(dir, ".gitignore");
-  if (!fs.existsSync(gi)) fs.writeFileSync(gi, "# Project Canvas runtime files (config.json is meant to be committed)\nstate.json\nmanifest.json\n");
+  if (!fs.existsSync(gi)) fs.writeFileSync(gi, "# Project Canvas runtime files (config.json is meant to be committed)\nstate.json\nmanifest.json\nsnapshots/\n");
+  else if (!/^snapshots\/?$/m.test(fs.readFileSync(gi, "utf8"))) fs.appendFileSync(gi, "snapshots/\n");
   fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
 }
 

@@ -3,7 +3,9 @@
 A Claude Code plugin that lays out every page or screen of your project on a live design canvas, next to your terminal.
 
 - **Websites** appear as a **sitemap** (a tree by URL). **Products** appear as a **flow** (screens connected by the links and navigations found in the code).
-- Every frame is a **live iframe** of your dev server, so it updates as Claude edits.
+- Every view is a **snapshot** of the real page, visible at any zoom, in **Screen** or **Full page** height, as the **Live** design or as a **Wireframe**. Click **Interact** (or double-click) to use the live page right on the canvas.
+- **See Claude work:** while an agent reads or edits a view, its frame gets a violet ring and goes live, then the snapshot refreshes when it's done.
+- **Light, dark or system** theme for the canvas.
 - **Select a view, and your next prompt in Claude Code only affects that view.** Select nothing, and it affects the whole project.
 - A **Design system** tab shows your tokens, primitives (`components/ui`) and components, and which views use each one. Selecting a component scopes your prompts to it.
 - A **Ship** button at the top commits, pushes or opens a pull request.
@@ -32,7 +34,9 @@ The first time, Claude reads what was detected, checks whether the project is a 
 | What you do | What happens |
 | --- | --- |
 | Click a frame or a row in the list | Your prompts are scoped to that view (highlighted in yellow). Esc or click the background to clear it. |
-| Double-click a frame | Use the live page inside the canvas. Esc exits. |
+| Double-click a frame, or hover and click **Interact** | Use the live page inside the canvas. Esc exits. |
+| Screen / Full page, Live / Wireframe | Change the frame height or layer (bottom toolbar). |
+| ☾ in the top bar | Light, dark, or match system. |
 | Double-click a name | Rename the view. |
 | ⤢ / Shift+1 | Zoom out to show the whole project. |
 | ⌖ / Shift+2 | Zoom in on the view closest to the centre of the screen. |

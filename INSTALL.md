@@ -50,6 +50,7 @@ Start a new session and run `/canvas` in your project. A canvas that's still run
 | --- | --- |
 | Gray frames with a sad-page icon | Run `/canvas` again. An old canvas server is probably still running, and the new one replaces it. |
 | "Dev server offline" or a red "Dev server didn't answer" bar | Start the dev server. If it runs on a different port, update the dev server URL in the canvas settings (gear icon). |
+| A frame is out of date after a CMS or database change | Settings (gear) → **Refresh snapshots**. Code changes refresh on their own. |
 | Every frame shows the sign-in page | Sign in to the app at its localhost address in the same browser first. Frames use that sign-in. |
 | Red "404" bar on a frame | The route needs a real example URL (dynamic routes ask for one), or it should be hidden. Ask Claude to fix it in `.canvas/config.json`. |
 | Selecting a view doesn't limit what Claude edits | Ask Claude "what view am I scoped to?". If it doesn't know, plugin hooks aren't running in your Claude Code setup; try Claude Code in a terminal. |

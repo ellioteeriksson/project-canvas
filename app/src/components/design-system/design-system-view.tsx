@@ -185,7 +185,7 @@ function ComponentCard({ c, manifest, selected, onSelect, onOpenView }: { c: Com
     <article
       className={cn(
         "flex flex-col overflow-hidden rounded-lg border bg-background transition-shadow",
-        selected && "border-[#1c2230] shadow-[0_0_0_5px_var(--scope)]",
+        selected && "border-foreground shadow-[0_0_0_5px_var(--scope)]",
       )}
     >
       {manifest.previewRoute && (

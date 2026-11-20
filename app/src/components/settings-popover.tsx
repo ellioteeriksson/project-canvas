@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GearSix, ArrowsClockwise, ArrowCounterClockwise } from "@phosphor-icons/react";
+import { GearSix, ArrowsClockwise, ArrowCounterClockwise, Images } from "@phosphor-icons/react";
 import type { Manifest } from "@/lib/types";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -48,14 +48,15 @@ export function SettingsPopover({ manifest }: { manifest: Manifest }) {
           </div>
         </form>
         <Separator />
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => api.refreshSnapshots()}><Images size={14} /> Refresh snapshots</Button>
           <Button variant="outline" size="sm" onClick={() => api.rescan()}><ArrowsClockwise size={14} /> Rescan project</Button>
           <Button variant="outline" size="sm" onClick={() => api.config({ positions: { ...manifest.positions, [manifest.mode]: {}, [`${manifest.mode}-full`]: {} } })}>
             <ArrowCounterClockwise size={14} /> Reset layout
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Settings are saved to <span className="font-mono">.canvas/config.json</span>. Commit it so your team gets the same names and layout.
+          Snapshots refresh by themselves when files change. Use Refresh snapshots after content changes outside the code, like CMS edits. Settings are saved to <span className="font-mono">.canvas/config.json</span>. Commit it so your team gets the same names and layout.
         </p>
       </PopoverContent>
     </Popover>

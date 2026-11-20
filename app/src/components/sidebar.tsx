@@ -24,7 +24,7 @@ function buildTree(m: Manifest): TreeItem[] {
   return [...items.values()].filter((i) => !hasParent.has(i.id)).sort(sort);
 }
 
-export function ViewsSidebar({ manifest, selectedId, onPick }: { manifest: Manifest; selectedId: string | null; onPick: (id: string, isGroup: boolean) => void }) {
+export function ViewsSidebar({ manifest, selectedId, onPick, activeViews }: { manifest: Manifest; selectedId: string | null; onPick: (id: string, isGroup: boolean) => void; activeViews: Set<string> }) {
   const [q, setQ] = useState("");
   const tree = useMemo(() => buildTree(manifest), [manifest]);
   const flat = useMemo(() => {
@@ -46,8 +46,8 @@ export function ViewsSidebar({ manifest, selectedId, onPick }: { manifest: Manif
       <ScrollArea className="min-h-0 flex-1">
         <ul className="px-1.5 pb-3" role="tree" aria-label="Project views">
           {flat
-            ? flat.map((v) => <Row key={v.id} item={{ id: v.id, name: v.name, route: v.route, group: false, needsParam: !v.url, children: [] }} depth={0} selectedId={selectedId} onPick={onPick} />)
-            : tree.map((t) => <Row key={t.id} item={t} depth={0} selectedId={selectedId} onPick={onPick} />)}
+            ? flat.map((v) => <Row key={v.id} item={{ id: v.id, name: v.name, route: v.route, group: false, needsParam: !v.url, children: [] }} depth={0} selectedId={selectedId} onPick={onPick} active={activeViews} />)
+            : tree.map((t) => <Row key={t.id} item={t} depth={0} selectedId={selectedId} onPick={onPick} active={activeViews} />)}
           {flat?.length === 0 && <li className="px-3 py-2 text-muted-foreground">No views match “{q}”.</li>}
         </ul>
       </ScrollArea>
@@ -55,7 +55,7 @@ export function ViewsSidebar({ manifest, selectedId, onPick }: { manifest: Manif
   );
 }
 
-function Row({ item, depth, selectedId, onPick }: { item: TreeItem; depth: number; selectedId: string | null; onPick: (id: string, isGroup: boolean) => void }) {
+function Row({ item, depth, selectedId, onPick, active }: { item: TreeItem; depth: number; selectedId: string | null; onPick: (id: string, isGroup: boolean) => void; active: Set<string> }) {
   const [open, setOpen] = useState(depth < 2);
   const selected = selectedId === item.id;
   const Icon = item.group ? FolderSimple : item.needsParam ? WarningCircle : Browser;
@@ -83,6 +83,7 @@ function Row({ item, depth, selectedId, onPick }: { item: TreeItem; depth: numbe
       >
         <Icon size={14} className={cn("shrink-0", item.needsParam ? "text-[#b7791f]" : "text-muted-foreground")} weight={selected ? "fill" : "regular"} />
         <EditableName value={item.name} onSave={(n) => api.config({ names: { [item.id]: n } })} />
+        {active.has(item.id) && <span className="agent-dot size-1.5 shrink-0 rounded-full bg-[var(--agent)]" aria-label="Claude is working here" />}
       </button>
       <span className="ml-auto max-w-[52%] shrink-0 truncate text-left font-mono text-[11px] text-muted-foreground [direction:rtl]" title={item.route}><bdi>{item.route}</bdi></span>
     </div>
@@ -94,7 +95,7 @@ function Row({ item, depth, selectedId, onPick }: { item: TreeItem; depth: numbe
           {row}
           <CollapsibleContent>
             <ul role="group">
-              {item.children.map((c) => <Row key={c.id} item={c} depth={depth + 1} selectedId={selectedId} onPick={onPick} />)}
+              {item.children.map((c) => <Row key={c.id} item={c} depth={depth + 1} selectedId={selectedId} onPick={onPick} active={active} />)}
             </ul>
           </CollapsibleContent>
         </Collapsible>

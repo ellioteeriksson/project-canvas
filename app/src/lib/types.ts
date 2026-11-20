@@ -10,7 +10,8 @@ export type Manifest = {
   project: { name: string; root: string; framework: string };
   mode: "sitemap" | "flow"; modeSource: "auto" | "config";
   devUrl: string; frameUrl?: string; viewport: "desktop" | "mobile"; previewRoute: string | null;
-  frameHeight: "viewport" | "full"; frameConcurrency: number;
+  frameHeight: "viewport" | "full"; frameConcurrency: number; frameLayer: "live" | "wireframe";
+  changedAt: Record<string, number>; globalFiles: string[];
   positions: Partial<Record<"sitemap" | "flow" | "sitemap-full" | "flow-full", Record<string, { x: number; y: number }>>>;
   views: View[]; groups: Group[]; edges: { tree: Edge[]; links: Edge[] };
   designSystem: { tokens: Token[]; fonts: string[]; components: Component[]; cssFiles: string[] };
@@ -27,3 +28,11 @@ export type GitStatus = {
 export type ShipAction = "commit" | "push" | "pr";
 export type ShipResult = { ok: boolean; steps: { cmd: string; ok: boolean; out: string }[]; branch?: string; prUrl?: string | null; error?: string };
 export type FrameStatus = Record<string, { status: number; ms?: number; error?: string; at: number }>;
+export type AgentPhase = "thinking" | "reading" | "editing" | "running";
+export type Agent = {
+  key: string; session: string; label: string; sub: boolean; phase: AgentPhase;
+  file: string | null; command: string | null; views: string[]; global: boolean; since: number; last: number;
+};
+export type EditEvent = { file: string | null; views: string[]; global: boolean; at: number };
+export type Snapshot = { file: string; at: number; h: number; w: number };
+export type SnapshotIndex = Record<string, Snapshot>;
