@@ -6,70 +6,12 @@ import type { ChatState, Manifest } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { CanvasHandle } from "@/components/canvas/canvas-view";
+import { LouFigure } from "@/components/lou";
 
 const NAME = "Lou";
-const SIZE = 56;
+const SIZE = 64;
 const CORNER = 20;
 const SEV = { error: "bg-[#ff3b30]", warning: "bg-[#ff9f0a]", info: "bg-muted-foreground/60" } as const;
-
-/* ---------- the character ---------- */
-function Blob({ look, blink, working, mood }: { look: { x: number; y: number }; blink: boolean; working: boolean; mood: "calm" | "happy" | "worried" }) {
-  const eye = (cx: number) => (
-    <g transform={`translate(${cx} 25)`}>
-      <ellipse rx="6.3" ry={blink ? 0.8 : 7.4} fill="#fff" style={{ transition: "ry 90ms" }} />
-      {!blink && <circle cx={look.x * 2.4} cy={look.y * 2.6 + (mood === "happy" ? -0.6 : 0)} r="3.5" fill="#1d1d1f" style={{ transition: "cx 220ms cubic-bezier(.3,.7,.3,1), cy 220ms cubic-bezier(.3,.7,.3,1)" }} />}
-      {!blink && <circle cx={look.x * 2.4 + 1.1} cy={look.y * 2.6 - 1.2} r="0.9" fill="#fff" style={{ transition: "cx 220ms, cy 220ms" }} />}
-    </g>
-  );
-  return (
-    <span className={cn("buddy-body relative block", working && "buddy-busy")} style={{ width: SIZE, height: SIZE }}>
-      <span className="buddy-blob absolute inset-0" />
-      <svg viewBox="0 0 56 56" width={SIZE} height={SIZE} className="absolute inset-0" aria-hidden>
-        {eye(20.5)}
-        {eye(35.5)}
-        {mood === "happy" && <path d="M23.5 36.5c2.6 2.4 6.4 2.4 9 0" stroke="#1d1d1f" strokeOpacity=".55" strokeWidth="1.6" fill="none" strokeLinecap="round" />}
-        {mood === "worried" && <path d="M24 38c2.4-1.6 5.6-1.6 8 0" stroke="#1d1d1f" strokeOpacity=".55" strokeWidth="1.6" fill="none" strokeLinecap="round" />}
-      </svg>
-      {/* The loupe comes out when there's work to do */}
-      <svg viewBox="0 0 30 30" width="30" height="30" aria-hidden className={cn("buddy-loupe absolute -right-3 -bottom-2", working && "on")}>
-        <path d="M18.5 18.5l7 7" stroke="#d97757" strokeWidth="4" strokeLinecap="round" />
-        <circle cx="12" cy="12" r="8.5" fill="rgba(255,255,255,.35)" stroke="#f5f5f7" strokeWidth="2.6" />
-        <path d="M8 9.5a5 5 0 0 1 4-3" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-      </svg>
-    </span>
-  );
-}
-
-/** Eyes that keep looking around, glance at the cursor when it's near, and blink now and then. */
-function useEyes(anchor: React.RefObject<HTMLElement | null>, focus: { x: number; y: number } | null) {
-  const [look, setLook] = useState({ x: 0, y: 0 });
-  const [blink, setBlink] = useState(false);
-  const mouse = useRef<{ x: number; y: number } | null>(null);
-  useEffect(() => {
-    const onMove = (e: PointerEvent) => { mouse.current = { x: e.clientX, y: e.clientY }; };
-    window.addEventListener("pointermove", onMove);
-    let t: ReturnType<typeof setTimeout>;
-    const glance = () => {
-      const r = anchor.current?.getBoundingClientRect();
-      const m = mouse.current;
-      if (focus) setLook(focus);
-      else if (r && m && Math.hypot(m.x - (r.x + r.width / 2), m.y - (r.y + r.height / 2)) < 320 && Math.random() < 0.7) {
-        const dx = m.x - (r.x + r.width / 2), dy = m.y - (r.y + r.height / 2), d = Math.hypot(dx, dy) || 1;
-        setLook({ x: dx / d, y: dy / d });
-      } else {
-        const a = Math.random() * Math.PI * 2, k = Math.random() < 0.25 ? 0 : 0.6 + Math.random() * 0.4;
-        setLook({ x: Math.cos(a) * k, y: Math.sin(a) * k * 0.8 });
-      }
-      t = setTimeout(glance, 900 + Math.random() * 2200);
-    };
-    glance();
-    let b: ReturnType<typeof setTimeout>;
-    const doBlink = () => { setBlink(true); setTimeout(() => setBlink(false), 130); b = setTimeout(doBlink, 2600 + Math.random() * 4200); };
-    b = setTimeout(doBlink, 2000);
-    return () => { clearTimeout(t); clearTimeout(b); window.removeEventListener("pointermove", onMove); };
-  }, [anchor, focus?.x, focus?.y]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { look, blink };
-}
 
 /* ---------- buddy ---------- */
 type Run = { progress: Progress | null; findings: Finding[]; rulesId: string | null; rulesState: "idle" | "waiting" | "done" | "skipped"; finishedAt: number | null; checks: CheckId[] };
@@ -93,13 +35,19 @@ export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, on
   const [copied, setCopied] = useState(false);
   const [flyTo, setFlyTo] = useState<{ x: number; y: number } | null>(null);
   const abort = useRef<AbortController | null>(null);
-  const body = useRef<HTMLButtonElement>(null);
+  const bubbleEl = useRef<HTMLDivElement>(null);
+  const [wave, setWave] = useState(0);
+  const greeted = useRef(false);
   const byId = useMemo(() => new Map(manifest.views.map((v) => [v.id, v])), [manifest.views]);
   const working = !!run && !run.finishedAt;
-  const { look, blink } = useEyes(body, working ? { x: 0.7, y: 0.75 } : null);
 
   useEffect(() => { try { localStorage.setItem("loupe-buddy-checks", JSON.stringify([...checks])); } catch {} }, [checks]);
-  useEffect(() => { if (open) setUnseen(0); }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    setUnseen(0);
+    // Wave hello the first time you open him
+    if (!greeted.current) { greeted.current = true; setWave((w) => w + 1); }
+  }, [open]);
 
   // Fly over the view being inspected (on the canvas tab)
   const progress = run?.progress;
@@ -112,8 +60,9 @@ export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, on
       const p = canvas.current?.screenPoint(id);
       if (!p) return setFlyTo(null);
       // Hover over the top right of the frame, holding the loupe over it
-      const x = Math.min(window.innerWidth - SIZE, Math.max(SIZE, p.x + p.w / 2 - 30));
-      const y = Math.min(window.innerHeight - SIZE, Math.max(SIZE + 60, p.y - p.h / 2 + 50));
+      // He hovers inside the frame's top right corner, holding the lens over the page
+      const x = Math.min(window.innerWidth - SIZE, Math.max(SIZE, p.x + p.w / 2 - 80));
+      const y = Math.min(window.innerHeight - SIZE, Math.max(SIZE + 60, p.y - p.h / 2 + 46));
       setFlyTo({ x: x - (window.innerWidth - CORNER - SIZE / 2), y: y - (window.innerHeight - CORNER - SIZE / 2) });
     }, 480);
     return () => clearTimeout(t);
@@ -166,7 +115,8 @@ export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, on
     setRun((r) => r && { ...r, findings: [...res.findings, ...r.findings], finishedAt: Date.now(), progress: { phase: "done", index: 0, total: 0 } });
     const n = res.findings.filter((f) => f.severity !== "info").length;
     if (!open) setUnseen((u) => u + res.findings.length);
-    say(n ? `I found ${n} thing${n > 1 ? "s" : ""} to fix` : res.findings.length ? "Looks good! A few tips" : "Everything looks good");
+    say(n ? `I found ${n} thing${n > 1 ? "s" : ""} to fix` : res.findings.length ? "Looks good. A few tips" : "Everything looks good");
+    if (!n) setWave((w) => w + 1);
     canvas.current?.fitAll();
   };
   const stop = () => { abort.current?.abort(); setRun((r) => r && { ...r, finishedAt: Date.now(), progress: null }); setFlyTo(null); onInspecting(null); };
@@ -283,26 +233,29 @@ export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, on
 
       {/* Short remarks when the panel is closed */}
       {!open && (bubble || (working && status)) && (
-        <div role="status" className="buddy-bubble island absolute z-40 max-w-[240px] rounded-[14px] rounded-br-[4px] px-3 py-2 text-[12.5px] leading-snug" style={{ right: CORNER + SIZE - 6, bottom: CORNER + SIZE - 6, transform: flyTo ? `translate(${flyTo.x}px, ${flyTo.y}px)` : undefined }}>
-          {working && status ? status : bubble}
+        <div className="pointer-events-none absolute z-40" style={{ right: CORNER + SIZE - 4, bottom: CORNER + SIZE - 2 }} ref={bubbleEl}>
+          <div role="status" className="buddy-bubble island max-w-[240px] rounded-[14px] rounded-br-[4px] px-3 py-2 text-[12.5px] leading-snug whitespace-nowrap">
+            {working && status ? status : bubble}
+          </div>
         </div>
       )}
 
       {/* Lou */}
-      <button
-        ref={body}
-        type="button"
+      <LouFigure
+        to={flyTo ?? { x: 0, y: 0 }}
+        mode={working ? "inspecting" : mood === "worried" ? "concerned" : mood === "happy" ? "happy" : "idle"}
+        wave={wave}
+        label={`${NAME}, your helper${unseen ? `, ${unseen} new findings` : ""}`}
+        expanded={open}
         onClick={() => { setOpen((o) => !o); setView("home"); }}
-        aria-expanded={open}
-        aria-label={`${NAME}, your helper${unseen ? `, ${unseen} new findings` : ""}`}
-        className={cn("buddy absolute z-40 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2", flyTo && "flying")}
-        style={{ right: CORNER, bottom: CORNER, transform: flyTo ? `translate(${flyTo.x}px, ${flyTo.y}px)` : undefined }}
+        bubbleRef={bubbleEl}
+        right={CORNER}
+        bottom={CORNER}
       >
-        <Blob look={look} blink={blink} working={working} mood={mood} />
         {unseen > 0 && (
           <span className="absolute -top-1 -right-1 grid h-5 min-w-5 place-items-center rounded-full bg-[#ff3b30] px-1.5 text-[11px] font-semibold text-white tabular-nums shadow-[0_0_0_2px_var(--paper)]">{unseen > 99 ? "99+" : unseen}</span>
         )}
-      </button>
+      </LouFigure>
     </>
   );
 }
