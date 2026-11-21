@@ -99,6 +99,8 @@ The canvas has a prompt bar that sends prompts to a Claude Code chat open in the
 
 - A canvas prompt arrives as a `<channel source="…" prompt_id="…">` event (live mode), as the result of `canvas_wait` (listen mode, `/canvas-listen`), from the Stop hook when you finish a turn, or as extra context on the user's next message. In every case it contains `<canvas-prompt prompt_id="…">` with the user's words and a `<project-canvas-scope>` block. Treat it as a message from the user and respect the scope.
 - When it's done, call `canvas_reply` with the `prompt_id` and a 1–3 sentence summary in the language of the prompt. The user reads that in the canvas, not in the chat.
+- Prompts sent with "4 concepts" on ask for design concepts: don't edit files, call `canvas_concepts` with 4 clearly different concepts (title, summary, `replace` [{selector, html}] with `"@scope"` for the selected section or element, and `css` scoped under a concept class). The canvas previews each one on the live page. When the user picks one, a follow-up prompt asks you to build it in the real code, with their comment.
+- `/canvas` starts listening (`canvas_wait`) after opening the canvas. After the user interrupts to use the chat, the Stop hook tells you to go back to listening; call `canvas_stop_listening` if they ask you to stop.
 - Only call `canvas_wait` when the user asked you to listen (`/canvas-listen`) or a `canvas_wait` result says to call it again.
 - History is kept in `.canvas/chat.json` (ignored by git). The canvas pairs chats with hook events by Claude Code's process id.
 

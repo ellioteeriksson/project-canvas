@@ -82,6 +82,7 @@ async function streamOnce(c) {
       try { payload = JSON.parse(data); } catch { continue; }
       if (event === "prompt") onPrompt(payload);
       else if (event === "verdict") onVerdict(payload);
+      else if (event === "stop-wait" && wait) finishWait(textResult("The user stopped listening from the canvas. Stop listening and end your turn."));
     }
   }
 }
@@ -107,6 +108,51 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
+    name: "canvas_concepts",
+    description:
+      "Propose visual concepts for a design request from the Project Canvas, instead of editing files. The canvas previews each concept on the live page and the user picks one; you then get a follow-up prompt to build it. Follow the instructions in the canvas prompt about selectors and CSS.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt_id: { type: "string", description: "The prompt_id of the canvas prompt" },
+        concepts: {
+          type: "array",
+          minItems: 1,
+          maxItems: 6,
+          description: "Usually exactly 4 clearly different concepts",
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string", description: "2–4 words" },
+              summary: { type: "string", description: "One sentence: what's different about this concept" },
+              css: { type: "string", description: "CSS for the preview, scoped under a class unique to the concept" },
+              replace: {
+                type: "array",
+                description: "Rendered elements to swap for new HTML",
+                items: {
+                  type: "object",
+                  properties: {
+                    selector: { type: "string", description: '"@scope" for the selected section or element, "@element:N" for the Nth selected element, or a CSS selector' },
+                    html: { type: "string", description: "The HTML that replaces the element (its outerHTML)" },
+                  },
+                  required: ["selector", "html"],
+                },
+              },
+            },
+            required: ["title", "summary"],
+          },
+        },
+      },
+      required: ["prompt_id", "concepts"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "canvas_stop_listening",
+    description: "Stop listening to the Project Canvas, when the user asks you to. Prompts from the canvas then wait until the user writes in this chat.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
     name: "canvas_reply",
     description: "Answer a prompt the user sent from the Project Canvas. The user reads this in the canvas, not in this chat, so summarise what you did in 1–3 sentences, in the language of the prompt.",
     inputSchema: {
@@ -122,7 +168,7 @@ const TOOLS = [
 ];
 
 const textResult = (text, isError = false) => ({ content: [{ type: "text", text }], isError });
-const listenResult = (text) => textResult(`${text}\n\nAfter canvas_reply, call canvas_wait again to keep listening to the canvas.`);
+const listenResult = (text) => textResult(`${text}\n\nWhen you've answered (canvas_reply or canvas_concepts), call canvas_wait again to keep listening to the canvas.`);
 
 function finishWait(result) {
   if (!wait) return;
@@ -138,6 +184,15 @@ async function callTool(reqId, name, args, meta) {
     if (!canvasUrl) return write({ id: reqId, result: textResult("The Project Canvas isn't running, so the reply couldn't be shown there. Tell the user in this chat instead.", true) });
     const r = await post("/api/channel/reply", { id: String(args?.prompt_id || ""), text: String(args?.text || "") });
     return write({ id: reqId, result: r.ok ? textResult("Shown in the canvas.") : textResult(r.error || "The canvas didn't accept the reply.", true) });
+  }
+  if (name === "canvas_concepts") {
+    if (!canvasUrl) return write({ id: reqId, result: textResult("The Project Canvas isn't running, so the concepts can't be shown. Tell the user to start it with /canvas.", true) });
+    const r = await post("/api/channel/concepts", { id: String(args?.prompt_id || ""), concepts: args?.concepts });
+    return write({ id: reqId, result: r.ok ? textResult("The concepts are in the canvas. Don't build anything yet: the user picks one there, and you'll get a follow-up prompt.") : textResult(r.error || "The canvas didn't accept the concepts.", true) });
+  }
+  if (name === "canvas_stop_listening") {
+    await post("/api/channel/stop-listening", {});
+    return write({ id: reqId, result: textResult("Stopped listening. Canvas prompts now arrive with the user's next message in this chat.") });
   }
   if (name === "canvas_wait") {
     for (let i = 0; i < 10 && !canvasUrl; i++) await new Promise((r) => setTimeout(r, 500));
@@ -166,7 +221,8 @@ const INSTRUCTIONS = [
   "Project Canvas shows this project's pages on a visual canvas, and the user can send prompts to this chat from it.",
   'Canvas prompts arrive as <channel source="…" prompt_id="…"> events, or as the result of canvas_wait when you are listening. Treat them exactly like a message the user typed here, and follow the <project-canvas-scope> block inside: it says which page, section or elements the prompt is about.',
   "When you have finished a canvas prompt, call canvas_reply with its prompt_id and a short summary of what you changed, in the language of the prompt. The user reads it in the canvas.",
-  "Only call canvas_wait when the user asked you to listen to the canvas, or a canvas_wait result told you to call it again.",
+  "Some canvas prompts ask for design concepts: then call canvas_concepts instead of editing files, and build only the concept the user picks.",
+  "Only call canvas_wait when the user asked you to listen to the canvas (/canvas starts listening), or a canvas_wait result or a hook told you to call it again. If the user asks you to stop listening, call canvas_stop_listening.",
 ].join("\n");
 
 async function handle(msg) {

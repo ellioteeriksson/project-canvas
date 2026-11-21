@@ -16,6 +16,7 @@ import { SettingsPopover } from "@/components/settings-popover";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AgentIndicator } from "@/components/agent-indicator";
 import { PromptBar } from "@/components/prompt-bar";
+import { ConceptDrawer } from "@/components/concept-drawer";
 
 type Tab = "canvas" | "sections" | "design";
 
@@ -24,6 +25,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("canvas");
   const [dsSection, setDsSection] = useState<DsSection>("tokens");
   const [sidebar, setSidebar] = useState(true);
+  const [conceptId, setConceptId] = useState<string | null>(null);
   const canvas = useRef<CanvasHandle>(null);
   const selection = state.selection ?? null;
   const selectedId = selection?.id ?? null;
@@ -135,8 +137,12 @@ export default function App() {
               agents={agents}
               selection={selection}
               onClearScope={() => select(null)}
+              onConcepts={setConceptId}
               scopeName={selectionName ? (selection?.kind === "section" || selection?.kind === "elements" ? `${selectionName} on ${selection.viewName}` : selectionName) : null}
             />
+            {conceptId && manifest && (
+              <ConceptDrawer id={conceptId} chat={chat} agents={agents} base={manifest.frameUrl || manifest.devUrl} onOpen={setConceptId} onClose={() => setConceptId(null)} />
+            )}
             {!connected && (
               <div role="status" className="absolute top-3 left-1/2 -translate-x-1/2 rounded-md border bg-background px-3 py-1.5 text-muted-foreground shadow-sm">
                 Lost connection to the canvas server. Reconnecting…

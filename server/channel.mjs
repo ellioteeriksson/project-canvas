@@ -23,7 +23,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy }) {
   try {
     prompts = JSON.parse(fs.readFileSync(file, "utf8")).prompts || [];
     // Chats from before a restart can't answer any more
-    for (const p of prompts) if (!["done", "failed", "cancelled"].includes(p.status)) { p.status = "failed"; p.note = "The canvas restarted before Claude answered"; }
+    for (const p of prompts) if (!["done", "failed", "cancelled", "concepts"].includes(p.status)) { p.status = "failed"; p.note = "The canvas restarted before Claude answered"; }
   } catch {}
 
   /* ---------- helpers ---------- */
@@ -38,7 +38,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy }) {
   function summary() {
     return {
       conns: [...conns.values()].map((c) => ({
-        id: c.id, status: statusOf(c), live: c.live, session: c.session || null,
+        id: c.id, status: statusOf(c), live: c.live, listen: !!c.listen, session: c.session || null,
         label: (c.session && sessions.get(c.session)?.prompt) || null,
         last: (c.session && sessions.get(c.session)?.last) || c.connectedAt, connectedAt: c.connectedAt,
       })).sort((a, b) => b.last - a.last),
@@ -141,6 +141,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy }) {
   function waiting(connId, on) {
     const c = conns.get(connId);
     if (!c) return {};
+    if (on) c.listen = true;
     if (on) {
       // Calling canvas_wait again means the previous canvas prompt is finished
       for (const p of prompts) if (p.conn === connId && p.status === "delivered" && p.via === "listen") { p.status = "done"; p.doneAt = now(); }
@@ -180,12 +181,17 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy }) {
   }
 
   /* ---------- hook side ---------- */
-  function claim({ session, claudePid, via }) {
+  function claim({ session, claudePid, via, stopHookActive }) {
     link(session, claudePid);
     const c = connFor({ session, claudePid });
     if (!c) return {};
     const q = nextQueued(c.id);
-    return q ? deliver(q, via === "stop" ? "stop" : "prompt") : {};
+    if (q) return deliver(q, via === "stop" ? "stop" : "prompt");
+    // The chat was listening before you used it: go back to listening when the turn ends
+    if (via === "stop" && c.listen && !c.waiting && !c.live && !stopHookActive) {
+      return { resume: true, text: "Go back to listening to the Project Canvas: call canvas_wait now (listening was started by /canvas). If the user asked you to stop listening, call canvas_stop_listening instead." };
+    }
+    return {};
   }
   function activity(ev) {
     if (!ev?.session) return;
@@ -206,29 +212,112 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy }) {
   }
 
   /* ---------- canvas UI side ---------- */
-  function submit({ text, conn }) {
-    const body = String(text || "").trim();
-    if (!body) return { ok: false, error: "Write a prompt first" };
+  const REPLY = (id) => `When you're done, call the canvas_reply tool with prompt_id "${id}" and a 1–3 sentence summary of what you changed, in the language of the prompt.`;
+
+  function conceptInstructions(id, info) {
+    const where = info?.section != null ? `the selected section (selector "@scope")`
+      : info?.selectors?.length ? `the selected element${info.selectors.length > 1 ? `s ("@element:1" … "@element:${info.selectors.length}", "@scope" is the first)` : ` (selector "@scope")`}`
+      : null;
+    return [
+      `This is a design request from the Project Canvas. Don't edit any project files yet: propose 4 visual concepts first.`,
+      `1. Read the code behind the scope above, so the concepts fit the existing page and design system.`,
+      `2. Call the canvas_concepts tool once, with prompt_id "${id}" and exactly 4 concepts that differ clearly from each other (layout, hierarchy, type, color or imagery, not only copy). Give each a short title and a one-sentence summary.`,
+      `   Each concept is previewed by changing the live page ${info?.url ? `${info.url} ` : ""}in the browser, at ${info?.device === "mobile" ? "390" : "1440"}px wide:`,
+      where
+        ? `   - replace: [{ selector, html }] swaps rendered elements for your HTML. Replace ${where} with your version of it.`
+        : `   - replace: [{ selector, html }] swaps rendered elements for your HTML. Use CSS selectors for elements as they are rendered on the page (for example "main > section:nth-of-type(2)").`,
+      `   - css: extra CSS for the preview. The page's own CSS still applies, but utility classes the project doesn't already use (Tailwind, for example) won't exist, so put new styling here, scoped under a class unique to the concept (such as .pc-c1). Use real copy and the project's fonts and colors. Images: reuse ones from the page.`,
+      `3. Then stop and wait. The user picks a concept in the canvas, and you'll get a follow-up prompt to build it in the real code.`,
+    ].join("\n");
+  }
+
+  function createPrompt({ conn, text, mode = "direct", scope, body, parent }) {
     const target = conn && conns.get(conn)?.res ? conn : defaultConn();
     if (!target) return { ok: false, error: "No Claude Code chat is open in this project" };
     const id = crypto.randomBytes(3).toString("hex");
-    const { label, scope } = scopeFor();
-    const full = [
-      `<canvas-prompt prompt_id="${id}">`,
-      body,
-      `</canvas-prompt>`,
-      "",
-      scope,
-      "",
-      `The user sent this from the Project Canvas, not from this chat. When you're done, call the canvas_reply tool with prompt_id "${id}" and a 1–3 sentence summary of what you changed, in the language of the prompt.`,
-    ].join("\n");
-    const p = { id, conn: target, session: conns.get(target)?.session || null, text: body, scope: label, status: "queued", at: now(), full };
+    const tail = mode === "concepts" ? conceptInstructions(id, scope.info) : REPLY(id);
+    const full = [`<canvas-prompt prompt_id="${id}">`, body ?? text, `</canvas-prompt>`, "", scope.scope, "", typeof tail === "function" ? tail(id) : tail].join("\n");
+    const p = {
+      id, conn: target, session: conns.get(target)?.session || null, text, mode, parent: parent || null,
+      scope: scope.label, scopeText: scope.scope, info: scope.info || null, status: "queued", at: now(), full,
+    };
     prompts.push(p);
     route(p);
     changed();
     const { full: _f, ...pub } = p;
     return { ok: true, prompt: pub };
   }
+
+  function submit({ text, conn, mode }) {
+    const body = String(text || "").trim();
+    if (!body) return { ok: false, error: "Write a prompt first" };
+    return createPrompt({ conn, text: body, mode: mode === "concepts" ? "concepts" : "direct", scope: scopeFor() });
+  }
+
+  /* ---------- design concepts ---------- */
+  function concepts(connId, id, list) {
+    const p = prompts.find((x) => x.id === id);
+    if (!p) return { ok: false, error: `No canvas prompt with id ${id}` };
+    if (!Array.isArray(list) || !list.length) return { ok: false, error: "Send at least one concept" };
+    const str = (v, n) => String(v ?? "").slice(0, n);
+    p.concepts = list.slice(0, 6).map((c, i) => ({
+      title: str(c?.title, 80) || `Concept ${i + 1}`,
+      summary: str(c?.summary, 500),
+      css: str(c?.css, 30_000),
+      replace: (Array.isArray(c?.replace) ? c.replace : []).slice(0, 10).map((r) => ({ selector: str(r?.selector, 300), html: str(r?.html, 60_000) })),
+    }));
+    Object.assign(p, { status: "concepts", doneAt: now() });
+    changed();
+    return { ok: true };
+  }
+  function choose({ id, index, comment }) {
+    const p = prompts.find((x) => x.id === id);
+    const c = p?.concepts?.[index];
+    if (!c) return { ok: false, error: "That concept doesn't exist any more" };
+    const note = String(comment || "").trim().slice(0, 2000);
+    p.chosen = { index, comment: note || null, at: now() };
+    const code = [
+      `Concept ${index + 1} “${c.title}”: ${c.summary}`,
+      c.css ? `Preview CSS:\n\`\`\`css\n${c.css}\n\`\`\`` : null,
+      ...c.replace.map((r) => `Preview HTML for \`${r.selector}\`:\n\`\`\`html\n${r.html}\n\`\`\``),
+    ].filter(Boolean).join("\n\n");
+    const text = `Build concept ${index + 1}, “${c.title}”${note ? `, with this change: ${note}` : ""}`;
+    const body = [
+      `Build concept ${index + 1} (“${c.title}”) in the real code.${note ? `\nThe user's comment on it: ${note}` : ""}`,
+      "",
+      `The user picked it in the Project Canvas from your concepts for prompt ${p.id} (“${p.text}”). It was previewed with the markup and CSS below. Build the same design with the project's own components, styling approach and tokens, rather than pasting the preview HTML. Keep to the scope below.`,
+      "",
+      code,
+    ].join("\n");
+    const r = createPrompt({ conn: p.conn, text, mode: "apply", scope: { label: p.scope, scope: p.scopeText, info: p.info }, body, parent: p.id });
+    if (r.ok) p.applied = r.prompt.id;
+    changed();
+    return r;
+  }
+  function again({ id, comment }) {
+    const p = prompts.find((x) => x.id === id);
+    if (!p) return { ok: false, error: "That request doesn't exist any more" };
+    const note = String(comment || "").trim().slice(0, 2000);
+    const prev = (p.concepts || []).map((c, i) => `${i + 1}. ${c.title}: ${c.summary}`).join("\n");
+    const body = [
+      p.text,
+      "",
+      `This is a new round: the user wants 4 new concepts for the request above.${note ? ` Their feedback: ${note}` : ""}`,
+      prev ? `Your previous concepts were:\n${prev}` : null,
+    ].filter((x) => x !== null).join("\n");
+    return createPrompt({ conn: p.conn, text: note ? `${p.text} (new round: ${note})` : `${p.text} (new round)`, mode: "concepts", scope: { label: p.scope, scope: p.scopeText, info: p.info }, body, parent: p.id });
+  }
+
+  /* ---------- listening that survives the chat being used ---------- */
+  function stopListening(connId) {
+    const c = conns.get(connId);
+    if (!c) return { ok: false };
+    c.listen = false;
+    if (c.waiting) { c.waiting = false; sendTo(c, "stop-wait", {}); }
+    changed();
+    return { ok: true };
+  }
+
   function cancel(id) {
     const p = prompts.find((x) => x.id === id);
     if (p && p.status === "queued") { p.status = "cancelled"; changed(); return { ok: true }; }
@@ -243,10 +332,10 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy }) {
     return { ok: true };
   }
   function clear() {
-    prompts = prompts.filter((p) => !["done", "failed", "cancelled"].includes(p.status));
+    prompts = prompts.filter((p) => !["done", "failed", "cancelled"].includes(p.status) && !(p.status === "concepts" && p.chosen));
     changed();
     return { ok: true };
   }
 
-  return { stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push };
+  return { stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
 }

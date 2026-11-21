@@ -9,6 +9,7 @@ A Claude Code plugin that lays out every page or screen of your project on a liv
 - **See Claude work:** while an agent reads or edits a view, its frame gets an orange ring and goes live, then the snapshot refreshes when it's done.
 - **Light, dark or system** theme for the canvas.
 - **Select a view, and your next prompt in Claude Code only affects that view.** Select nothing, and it affects the whole project.
+- **Design concepts:** with "4 concepts" on, a design request opens a drawer where Claude sketches 4 concepts, previewed on the real page. Add a comment to the one you like and pick it, and Claude builds it in the code. Not quite right? Ask for 4 new ones with feedback.
 - **Prompt from the canvas:** the prompt bar at the bottom sends a prompt straight to the Claude Code chat open in the project, with the current selection as its scope. Claude's answer and what it's doing show up in the canvas, so you don't have to switch windows.
 - A **Design system** tab shows your tokens, primitives (`components/ui`) and components, and which views use each one. Selecting a component scopes your prompts to it.
 - A **Ship** button at the top commits, pushes or opens a pull request.
@@ -83,7 +84,7 @@ Every Claude Code chat with the plugin connects itself to the project's canvas, 
 | Chat state | How the prompt gets there |
 | --- | --- |
 | **Live** (started with channels, see below) | Straight into the chat, even when it's idle. Permission prompts also show up in the canvas, with Allow and Deny. |
-| **Listening** (`/canvas-listen`) | Claude waits for canvas prompts and picks them up right away. Works in the desktop app. Interrupt Claude to type in the chat again. |
+| **Listening** (starts with `/canvas`, or `/canvas-listen`) | Claude waits for canvas prompts and picks them up right away. Works in the desktop app. Interrupt Claude to type in the chat; it goes back to listening when it's done. Say "stop listening", or use the chat menu in the prompt bar, to end it. |
 | **Working** | Claude takes it as soon as it finishes what it's doing. |
 | **Idle** | It rides along with the next message you type in the chat. |
 

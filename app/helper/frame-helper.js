@@ -218,7 +218,7 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
         const heading = el.querySelector("h1, h2, h3, [role=heading]")?.textContent?.replace(/\s+/g, " ").trim().slice(0, 80) || null;
         const tag = el.tagName.toLowerCase();
         const label = el.getAttribute("data-section") || el.getAttribute("aria-label") || (el.id ? humanize(el.id) : null);
-        return {
+        const o = {
           name: label || heading || (tag === "header" ? "Header" : tag === "footer" ? "Footer" : tag === "nav" ? "Navigation" : null),
           heading,
           tag,
@@ -227,6 +227,8 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
           top: Math.round(r.top + window.scrollY),
           height: Math.round(r.height),
         };
+        Object.defineProperty(o, "el", { value: el, enumerable: false });
+        return o;
       })
       .sort((a, b) => a.top - b.top);
     // A component name shared by most sections is the page itself, not a section component
@@ -397,12 +399,90 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
         fetch: { requestInit: { cache: "force-cache" } },
       });
       let sections = [];
-      try { sections = detectSections(); } catch {}
+      try { sections = detectSections().map((x) => ({ ...x })); } catch {}
       post({ type: "snapshot", id, dataUrl, h, w, sections });
     } catch (err) {
       post({ type: "snapshot-error", id, message: String(err?.message || err).slice(0, 300) });
     } finally {
       snapping = false;
+    }
+  }
+
+  /* ---------- design concepts: preview a proposed change on the real page ---------- */
+  const q = (sel) => { try { return sel ? document.querySelector(sel) : null; } catch { return null; } };
+  function scopeTarget(scope) {
+    if (scope.section != null) return detectSections()[scope.section]?.el || null;
+    if (scope.selectors?.length) return q(scope.selectors[0]);
+    return null;
+  }
+  function resolveTarget(sel, scope) {
+    if (sel === "@scope" || sel === "@section") return scopeTarget(scope);
+    const m = /^@element:(\d+)$/.exec(sel || "");
+    if (m) return q(scope.selectors?.[Number(m[1]) - 1]);
+    return q(sel);
+  }
+  async function concept(d) {
+    const scope = d.scope || {};
+    try {
+      if (frozenVH == null) frozenVH = window.innerHeight;
+      await settle();
+      await revealAll();
+      // Find every target before changing anything: section positions shift after a swap
+      const scoped = scopeTarget(scope);
+      const targets = (d.replace || []).map((r) => ({ r, el: resolveTarget(r.selector, scope) }));
+      const missing = targets.filter((t) => !t.el).map((t) => t.r.selector);
+      let changed = null;
+      for (const { r, el } of targets) {
+        if (!el) continue;
+        const tpl = document.createElement("template");
+        tpl.innerHTML = r.html || "";
+        const nodes = [...tpl.content.childNodes];
+        const firstEl = nodes.find((n) => n.nodeType === 1);
+        if (el === scoped && firstEl) changed = firstEl;
+        changed = changed || firstEl || null;
+        el.replaceWith(...nodes);
+      }
+      if (d.css) {
+        const st = document.createElement("style");
+        st.setAttribute("data-pc-concept", "");
+        st.textContent = d.css;
+        document.head.appendChild(st);
+      }
+      await settle();
+      await revealAll();
+      // Capture the changed part: the new section, the section around a changed element, or the page
+      let el = null;
+      if (d.capture !== "page") {
+        el = changed || scopeTarget(scope);
+        if (el && scope.section == null && scope.selectors?.length) {
+          const host = detectSections().map((x) => x.el).find((s) => s && s.contains(el));
+          if (host) el = host;
+        }
+      }
+      const bg = getComputedStyle(document.body || document.documentElement).backgroundColor;
+      const background = bg && bg !== "rgba(0, 0, 0, 0)" ? bg : getComputedStyle(document.documentElement).backgroundColor || "#ffffff";
+      const w = window.innerWidth;
+      const scale = Math.min(1, (d.maxW || 900) / w);
+      const opts = {
+        scale, quality: 0.85, backgroundColor: background, timeout: 20000,
+        filter: (node) => !(node instanceof Element) || (!DEV_OVERLAYS.has(node.tagName) && !node.hasAttribute("data-project-canvas")),
+        fetch: { requestInit: { cache: "force-cache" } },
+      };
+      let dataUrl, h;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        h = Math.min(Math.round(r.height), 6000);
+        // The background option paints the captured root, so only use it when the element has none of its own
+        const own = getComputedStyle(el).backgroundColor;
+        const elOpts = own && own !== "rgba(0, 0, 0, 0)" && own !== "transparent" ? { ...opts, backgroundColor: own } : opts;
+        dataUrl = await domToWebp(el, { ...elOpts, width: Math.round(r.width), height: h, style: { margin: "0" } });
+      } else {
+        h = Math.min(Math.max(contentHeight(), window.innerHeight), 8000);
+        dataUrl = await domToWebp(document.documentElement, { ...opts, width: w, height: h, style: { height: `${h}px`, minHeight: `${h}px`, overflow: "visible" } });
+      }
+      post({ type: "concept-shot", id: d.id, dataUrl, w, h, missing });
+    } catch (err) {
+      post({ type: "concept-error", id: d.id, message: String(err?.message || err).slice(0, 300) });
     }
   }
 
@@ -423,6 +503,7 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     }
     if (d.type === "wireframe") { if (d.on || wire) afterHydration(() => setWire(!!d.on)); }
     if (d.type === "pick") afterHydration(() => setPicking(!!d.on, d.selectors));
+    if (d.type === "concept") afterHydration(() => concept(d));
     // The canvas asks after an agent edit: did the page update itself (hot reload) since then?
     if (d.type === "query-mutation") post({ type: "mutation", at: lastMutation, id: d.id });
   });

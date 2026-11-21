@@ -15,7 +15,7 @@ try {
   const r = await fetch(`${c.state.url}/api/channel/claim`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session: input.session_id, claudePid: sessionClaudePid(input.session_id), via: event === "Stop" ? "stop" : "prompt" }),
+    body: JSON.stringify({ session: input.session_id, claudePid: sessionClaudePid(input.session_id), via: event === "Stop" ? "stop" : "prompt", stopHookActive: !!input.stop_hook_active }),
     signal: AbortSignal.timeout(1500),
   });
   claim = await r.json();
@@ -23,4 +23,5 @@ try {
 if (!claim?.text) process.exit(0);
 
 if (event === "Stop") out({ decision: "block", reason: claim.text });
+else if (claim.resume) process.exit(0);
 else out({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: `While you were busy, the user also sent this from the Project Canvas. Handle it too:\n${claim.text}` } });

@@ -164,12 +164,23 @@ function scopeLabel(sel) {
   if (sel.kind === "section" || sel.kind === "elements") return `${sel.name} on ${sel.viewName}`;
   return sel.name;
 }
+/** Where design concepts for this selection are previewed: which page, and what to swap on it. */
+function previewInfo(sel) {
+  const viewId = sel?.kind === "view" ? sel.id : sel?.viewId;
+  const v = manifest.views.find((x) => x.id === viewId) || (!sel || sel.kind === "component" ? manifest.views.find((x) => x.route === "/") || manifest.views[0] : null);
+  if (!v) return null;
+  return {
+    viewId: v.id, url: v.url, device: sel?.device === "mobile" || manifest.viewport === "mobile" ? "mobile" : "desktop",
+    section: sel?.kind === "section" ? sel.position?.index ?? null : null,
+    selectors: sel?.kind === "elements" ? sel.elements.map((e) => e.selector) : [],
+  };
+}
 const hub = createChannelHub({
   root: ROOT,
   broadcast: (e, d) => broadcast(e, d),
   scopeFor: () => {
     const sel = readState().selection;
-    return { label: scopeLabel(sel), scope: buildScope(sel, manifest) };
+    return { label: scopeLabel(sel), scope: buildScope(sel, manifest), info: previewInfo(sel) };
   },
   isBusy: (session) => [...agents.values()].some((a) => a.session === session),
 });
@@ -293,6 +304,8 @@ async function handle(req, res) {
       "/api/channel/reply": () => hub.reply(b.conn, b.id, b.text),
       "/api/channel/permission": () => hub.permissionRequest(b.conn, b),
       "/api/channel/claim": () => hub.claim(b),
+      "/api/channel/concepts": () => hub.concepts(b.conn, b.id, b.concepts),
+      "/api/channel/stop-listening": () => hub.stopListening(b.conn),
     }[p];
     return r ? send(res, 200, r()) : send(res, 404, { error: "unknown" });
   }
@@ -300,6 +313,9 @@ async function handle(req, res) {
   if (req.method === "POST" && p === "/api/prompt") { const b = await readBody(req); const r = hub.submit(b); return send(res, r.ok ? 200 : 400, r); }
   if (req.method === "POST" && p === "/api/prompt/cancel") return send(res, 200, hub.cancel((await readBody(req)).id));
   if (req.method === "POST" && p === "/api/prompt/clear") return send(res, 200, hub.clear());
+  if (req.method === "POST" && p === "/api/concepts/choose") { const r = hub.choose(await readBody(req)); return send(res, r.ok ? 200 : 400, r); }
+  if (req.method === "POST" && p === "/api/concepts/again") { const r = hub.again(await readBody(req)); return send(res, r.ok ? 200 : 400, r); }
+  if (req.method === "POST" && p === "/api/listen/stop") return send(res, 200, hub.stopListening((await readBody(req)).conn));
   if (req.method === "POST" && p === "/api/permission") { const b = await readBody(req); return send(res, 200, hub.verdict(b.request_id, b.behavior)); }
 
   if (p === "/api/state") return send(res, 200, { ...readState(), version: VERSION });

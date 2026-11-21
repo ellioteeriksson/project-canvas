@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, CaretDown, CaretUp, Check, ChatCircleDots, Crosshair, ShieldWarning, Sparkle, Warning, X } from "@phosphor-icons/react";
+import { ArrowUp, CaretDown, CaretUp, Check, ChatCircleDots, Crosshair, ShieldWarning, Sparkle, SquaresFour, Warning, X } from "@phosphor-icons/react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import type { Agent, CanvasPrompt, ChatConn, ChatState, ChatStatus, Selection } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -33,7 +34,9 @@ function StatusDot({ status, className }: { status: ChatStatus; className?: stri
 const chatName = (c: ChatConn) => (c.label ? `“${c.label}”` : "New chat");
 
 /** Prompt bar: send a prompt from the canvas to a Claude Code chat open in this project. */
-export function PromptBar({ chat, agents, selection, scopeName, onClearScope }: { chat: ChatState; agents: Agent[]; selection: Selection | null; scopeName: string | null; onClearScope: () => void }) {
+export function PromptBar({ chat, agents, selection, scopeName, onClearScope, onConcepts }: { chat: ChatState; agents: Agent[]; selection: Selection | null; scopeName: string | null; onClearScope: () => void; onConcepts: (id: string) => void }) {
+  const [concepts, setConcepts] = useState(() => { try { return localStorage.getItem("project-canvas-concepts") !== "off"; } catch { return true; } });
+  const toggleConcepts = () => setConcepts((on) => { try { localStorage.setItem("project-canvas-concepts", on ? "off" : "on"); } catch {} return !on; });
   const [text, setText] = useState("");
   const [target, setTarget] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -69,9 +72,10 @@ export function PromptBar({ chat, agents, selection, scopeName, onClearScope }: 
     if (!body || !current || sending) return;
     setSending(true);
     setError(null);
-    const r = await api.prompt(body, current.id).catch(() => ({ ok: false, error: "The canvas server didn't answer" }));
+    const r = await api.prompt(body, current.id, concepts ? "concepts" : "direct").catch(() => ({ ok: false, error: "The canvas server didn't answer", prompt: undefined }));
     setSending(false);
     if (!r.ok) return setError(r.error ?? "Couldn't send the prompt");
+    if (concepts && r.prompt) onConcepts(r.prompt.id);
     setText("");
     requestAnimationFrame(grow);
   };
@@ -89,7 +93,7 @@ export function PromptBar({ chat, agents, selection, scopeName, onClearScope }: 
             <div ref={thread} className="max-h-[min(46vh,420px)] overflow-y-auto border-b" aria-label="Prompts sent from the canvas">
               {recent.length ? (
                 <ol className="flex flex-col">
-                  {recent.map((p) => <PromptItem key={p.id} p={p} conns={chat.conns} agents={agents} />)}
+                  {recent.map((p) => <PromptItem key={p.id} p={p} conns={chat.conns} agents={agents} onConcepts={onConcepts} />)}
                 </ol>
               ) : (
                 <p className="px-4 py-6 text-center text-muted-foreground">Prompts you send from here show up in this list, with Claude's answers.</p>
@@ -102,8 +106,8 @@ export function PromptBar({ chat, agents, selection, scopeName, onClearScope }: 
             </div>
           )}
           {!open && latest && latest.status !== "cancelled" && (
-            <button type="button" onClick={() => setOpen(true)} className="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs outline-none hover:bg-accent focus-visible:bg-accent">
-              <PromptState p={latest} conns={chat.conns} agents={agents} compact />
+            <button type="button" onClick={() => (latest.mode === "concepts" ? onConcepts(latest.id) : setOpen(true))} className="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs outline-none hover:bg-accent focus-visible:bg-accent">
+              <PromptState p={latest} conns={chat.conns} agents={agents} compact onConcepts={onConcepts} />
               <CaretUp size={12} className="ml-auto shrink-0 text-muted-foreground" />
             </button>
           )}
@@ -156,7 +160,18 @@ export function PromptBar({ chat, agents, selection, scopeName, onClearScope }: 
               <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={current ? STATUS[current.status].hint : undefined}>
                 {error ? <span className="text-destructive">{error}</span> : current ? STATUS[current.status].hint : "The prompt bar connects to chats with the Project Canvas plugin."}
               </p>
-              <Kbd className="hidden sm:inline-flex">⌘K</Kbd>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button" variant="ghost" size="sm" onClick={toggleConcepts} aria-pressed={concepts}
+                    className={cn("h-8 shrink-0 gap-1.5 px-2 text-xs", concepts ? "bg-scope/12 text-scope hover:bg-scope/16 hover:text-scope" : "text-muted-foreground")}
+                  >
+                    <SquaresFour size={14} weight={concepts ? "fill" : "regular"} /> 4 concepts
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{concepts ? "On: Claude sketches 4 concepts to pick from before changing the code" : "Off: Claude changes the code straight away"}</TooltipContent>
+              </Tooltip>
+              <Kbd className="hidden lg:inline-flex">⌘K</Kbd>
               <Button type="submit" size="icon" className="size-8 shrink-0 rounded-lg" disabled={!current || !text.trim() || sending} aria-label="Send to Claude Code">
                 <ArrowUp size={16} weight="bold" />
               </Button>
@@ -177,7 +192,7 @@ function ChatPicker({ conns, current, onPick }: { conns: ChatConn[]; current: Ch
       <span className="text-muted-foreground">{STATUS[current.status].word}</span>
     </>
   );
-  if (conns.length < 2) return <span className="inline-flex h-7 min-w-0 shrink-0 items-center gap-1.5 text-xs">{label}</span>;
+  if (conns.length < 2 && !(current.listen && current.status !== "live")) return <span className="inline-flex h-7 min-w-0 shrink-0 items-center gap-1.5 text-xs">{label}</span>;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -189,6 +204,12 @@ function ChatPicker({ conns, current, onPick }: { conns: ChatConn[]; current: Ch
       <DropdownMenuContent align="start" className="w-80">
         <DropdownMenuLabel>Send to</DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {current.listen && current.status !== "live" && (
+          <>
+            <DropdownMenuItem onSelect={() => api.stopListening(current.id)}>Stop listening in this chat</DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {conns.map((c) => (
           <DropdownMenuItem key={c.id} onSelect={() => onPick(c.id)} className="flex items-start gap-2">
             <StatusDot status={c.status} className="mt-1.5" />
@@ -204,25 +225,36 @@ function ChatPicker({ conns, current, onPick }: { conns: ChatConn[]; current: Ch
   );
 }
 
-function PromptItem({ p, conns, agents }: { p: CanvasPrompt; conns: ChatConn[]; agents: Agent[] }) {
+function PromptItem({ p, conns, agents, onConcepts }: { p: CanvasPrompt; conns: ChatConn[]; agents: Agent[]; onConcepts: (id: string) => void }) {
   return (
     <li className="flex flex-col gap-1.5 border-b px-4 py-3 last:border-b-0">
       <div className="flex items-baseline gap-2">
         <p className="line-clamp-3 min-w-0 flex-1 text-[13px] whitespace-pre-wrap">{p.text}</p>
         <span className="shrink-0 text-xs text-muted-foreground">{p.scope}</span>
       </div>
-      <PromptState p={p} conns={conns} agents={agents} />
+      <PromptState p={p} conns={conns} agents={agents} onConcepts={onConcepts} />
     </li>
   );
 }
 
 /** What happened to a prompt: waiting, Claude working on it (with what it's doing), answered. */
-function PromptState({ p, conns, agents, compact }: { p: CanvasPrompt; conns: ChatConn[]; agents: Agent[]; compact?: boolean }) {
+function PromptState({ p, conns, agents, compact, onConcepts }: { p: CanvasPrompt; conns: ChatConn[]; agents: Agent[]; compact?: boolean; onConcepts: (id: string) => void }) {
   const conn = conns.find((c) => c.id === p.conn);
   const session = conn?.session ?? p.session;
   const agent = session ? agents.filter((a) => a.session === session).sort((a, b) => b.last - a.last)[0] : undefined;
   const lead = compact ? <span className="max-w-[40%] shrink-0 truncate font-medium">{p.text}</span> : null;
 
+  if (p.status === "concepts") {
+    const label = p.chosen ? `Picked “${p.concepts?.[p.chosen.index]?.title}”` : `${p.concepts?.length ?? 4} concepts ready to pick from`;
+    return (
+      <div className="flex min-w-0 items-center gap-2 text-xs">
+        {lead}
+        <SquaresFour size={13} weight="fill" className="shrink-0 text-scope" />
+        <span className="truncate">{label}</span>
+        {!compact && <Button variant="ghost" size="sm" className="ml-auto h-6 px-1.5 text-xs" onClick={() => onConcepts(p.id)}>Open</Button>}
+      </div>
+    );
+  }
   if (p.status === "done")
     return (
       <div className={cn("flex min-w-0 gap-2", compact ? "items-center" : "items-start")}>
@@ -248,6 +280,13 @@ function PromptState({ p, conns, agents, compact }: { p: CanvasPrompt; conns: Ch
           <span className="truncate">The chat closed without answering</span>
         </div>
       );
+    if (p.mode === "concepts" && !agent) return (
+      <div className="flex min-w-0 items-center gap-2 text-xs" aria-live="polite">
+        {lead}
+        <Sparkle size={13} weight="fill" className="agent-dot shrink-0 text-[var(--agent)]" />
+        <span className="truncate">Claude is sketching concepts</span>
+      </div>
+    );
     const what = agent ? `${PHASE[agent.phase]} ${agent.phase === "running" ? agent.command ?? "" : agent.file?.split("/").pop() ?? ""}`.trim() : "Claude is on it";
     return (
       <div className="flex min-w-0 items-center gap-2 text-xs" aria-live="polite">
