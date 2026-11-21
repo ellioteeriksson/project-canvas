@@ -20,6 +20,7 @@ import { SettingsPopover } from "@/components/settings-popover";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AgentIndicator } from "@/components/agent-indicator";
 import { PromptBar } from "@/components/prompt-bar";
+import { shell } from "@/lib/shell";
 import { BrandMark } from "@/components/brand-mark";
 import { ConceptDrawer } from "@/components/concept-drawer";
 
@@ -119,8 +120,15 @@ export default function App() {
           className={cn("island absolute top-3 left-3 z-20 flex w-[264px] flex-col overflow-hidden transition-[height] duration-200", sidebar ? "bottom-3" : "h-[56px]")}
           aria-label="Project"
         >
-          <div className="flex h-[56px] shrink-0 items-center gap-2.5 pr-2 pl-3.5">
-            <BrandMark size={26} />
+          <div className="shell-lights shell-drag flex h-[56px] shrink-0 items-center gap-2.5 pr-2 pl-3.5">
+            {shell ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button type="button" onClick={() => shell!.showHome()} aria-label="All projects" className="rounded-[7px] outline-none focus-visible:ring-2 focus-visible:ring-ring"><BrandMark size={26} /></button>
+                </TooltipTrigger>
+                <TooltipContent>All projects (⌘1)</TooltipContent>
+              </Tooltip>
+            ) : <BrandMark size={26} />}
             <div className="min-w-0 flex-1 leading-tight">
               <h1 className="truncate text-[14px] font-semibold">{manifest.project.name}</h1>
               <p className="truncate text-[11.5px] text-muted-foreground">

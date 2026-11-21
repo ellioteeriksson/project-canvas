@@ -3,3 +3,5 @@ app/node_modules/
 .DS_Store
 *.log
 # app/dist is committed on purpose so the plugin runs without an install step
+desktop/node_modules/
+desktop/dist/

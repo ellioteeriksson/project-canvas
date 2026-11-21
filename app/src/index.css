@@ -197,3 +197,8 @@
 .buddy-bubble { animation: buddy-pop 220ms cubic-bezier(.2, .9, .3, 1.2); transform-origin: 100% 100%; }
 @keyframes buddy-pop { from { opacity: 0; transform: scale(.92) translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .buddy-panel, .buddy-bubble { animation: none; } }
+
+/* Inside the Loupe app for macOS: room for the window's traffic lights, and drag areas */
+[data-shell="darwin"] .shell-lights { padding-left: 84px; }
+[data-shell="darwin"] .shell-drag { -webkit-app-region: drag; }
+[data-shell="darwin"] .shell-drag :is(button, a, input, label, [role="button"]) { -webkit-app-region: no-drag; }

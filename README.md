@@ -38,6 +38,25 @@ Start a new session, open a project and type `/loupe`. [INSTALL.md](INSTALL.md) 
 claude plugin marketplace update loupe && claude plugin update loupe@loupe
 ```
 
+## The Loupe app for macOS
+
+All your Loupe projects in one place, like Figma's file browser. The app lists every project you've opened Loupe in (it also finds the ones from before you installed it), with a picture of each home page and whether Claude is connected or working. Click one and its canvas opens in its own window. There's no need to run `/loupe` first.
+
+The canvases are the same local servers `/loupe` starts, so Claude Code sessions in those projects connect to them as usual: from the terminal, or the Code tab in the Claude desktop app. They keep running when you close the app.
+
+To run it from this repository (Node 20+):
+
+```bash
+cd desktop
+npm install
+npm start          # run it
+npm run dist       # or build Loupe.app (desktop/dist), for your Applications folder
+```
+
+The build isn't signed with an Apple Developer ID, so the first time, right-click Loupe.app and choose **Open**.
+
+Prefer the browser? `/loupe-home` in Claude Code, or `node server/hub.mjs --open`, shows the same projects in a tab.
+
 ## Use it on an existing project
 
 ```text
@@ -74,6 +93,7 @@ The first time, Claude reads what was detected, checks whether the project is a 
 - `/loupe`: open the canvas, or reopen it if it's already running
 - `/loupe-listen`: let this chat take prompts from the canvas prompt bar right away (see below)
 - `/loupe-stop`: stop the server
+- `/loupe-home`: every project you've opened Loupe in, in a browser tab
 - `/loupe-preview`: add a dev-only `/__canvas` route so the Design system tab shows live component previews
 
 ### How scoping works
@@ -136,7 +156,7 @@ If something is missed, add it in `.canvas/config.json` (`views`, `framework`, `
 
 ## Privacy
 
-Loupe runs entirely on your machine. The canvas server listens on `127.0.0.1` only and refuses requests from other sites. Nothing is sent anywhere except through your own Claude Code session.
+Loupe runs entirely on your machine. The canvas server listens on `127.0.0.1` only and refuses requests from other sites. Nothing is sent anywhere except through your own Claude Code session. The list of your projects is kept in `~/.claude/loupe/projects.json`.
 
 ## Developing the UI
 

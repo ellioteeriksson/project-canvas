@@ -17,6 +17,7 @@ import { createSnapshotStore, computeChangedAt } from "./snapshots.mjs";
 import { createChannelHub } from "./channel.mjs";
 import { createChangelog } from "./changelog.mjs";
 import { buildScope } from "../scripts/scope.mjs";
+import { remember } from "./registry.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(HERE, "..", "app", "dist");
@@ -68,6 +69,7 @@ function rescan(reason = "") {
       lastSig = sig;
       writeManifest(ROOT, m);
       broadcast("manifest", m);
+      remember(ROOT, { name: m.project.name, framework: m.project.framework, mode: m.mode, views: m.views.length });
       refreshSelection();
       if (reason) console.log(`[loupe] rescanned (${reason}) · ${m.views.length} views`);
     }
@@ -278,6 +280,16 @@ async function handle(req, res) {
     return;
   }
   if (p === "/api/manifest") return send(res, 200, manifest);
+  // A short status for the Loupe app's home screen
+  if (p === "/api/summary") {
+    const chat = hub.summary();
+    const open = chat.conns.filter((c) => c.status !== "offline");
+    return send(res, 200, {
+      root: ROOT, version: VERSION, name: manifest?.project.name, views: manifest?.views.length ?? 0,
+      chats: open.length, live: open.some((c) => c.status === "live" || c.status === "listening"),
+      working: activityList().length, waiting: chat.permissions.length,
+    });
+  }
   if (p === "/api/snapshot" && req.method === "POST") {
     const body = await readBody(req);
     try {
@@ -559,6 +571,7 @@ async function main() {
   server.listen(port, "127.0.0.1", () => {
     const url = `http://localhost:${port}`;
     writeState({ pid: process.pid, port, url, root: ROOT, version: VERSION, selection: prev.selection ? selectionRecord(prev.selection) : null });
+    remember(ROOT, { name: manifest.project.name, framework: manifest.project.framework, mode: manifest.mode, views: manifest.views.length });
     console.log(`[loupe] v${VERSION} · ${manifest.project.name} (${manifest.project.framework}, ${manifest.mode}) · ${manifest.views.length} views`);
     console.log(`[loupe] open ${url}`);
     if (args.open) {
