@@ -16,14 +16,14 @@ claude plugin marketplace add ellioteeriksson/loupe && claude plugin install lou
 
 Then start a new Claude Code session.
 
-**Had it installed as Project Canvas?** Remove the old plugin first, so you don't run both:
+**Had it installed under its old name, Project Canvas?** Remove the old plugin first, so you don't run both:
 
 ```bash
 claude plugin uninstall project-canvas@project-canvas && claude plugin marketplace remove project-canvas
 ```
 
 
-**Without GitHub access?** If you got the plugin as a zip, unzip it to a permanent folder (for example `~/claude-plugins/loupe`) and run `claude plugin marketplace add ~/claude-plugins/loupe && claude plugin install loupe@loupe`.
+**Installing from a zip?** Unzip it to a permanent folder (for example `~/claude-plugins/loupe`) and run `claude plugin marketplace add ~/claude-plugins/loupe && claude plugin install loupe@loupe`.
 
 ## 2. Use it on a project
 

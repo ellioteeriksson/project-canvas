@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, CircleNotch, Copy, Crosshair, Lightbulb, MagnifyingGlass, PencilSimple, Wrench, X } from "@phosphor-icons/react";
+import { ArrowLeft, Check, CircleNotch, Copy, Crosshair, Eye, EyeSlash, Lightbulb, MagnifyingGlass, PencilSimple, Smiley, Wrench, X } from "@phosphor-icons/react";
 import { api } from "@/lib/api";
-import { CHECKS, findingsMarkdown, ruleFindings, runAudit, type CheckId, type Finding, type Progress } from "@/lib/audit";
+import { CHECKS, findingKey, findingsMarkdown, ruleFindings, runAudit, type CheckId, type Finding, type Progress } from "@/lib/audit";
+import { nextJoke } from "@/lib/jokes";
 import type { ChatState, Manifest } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -12,59 +13,111 @@ const NAME = "Lou";
 const SIZE = 54;
 const CORNER = 20;
 const SEV = { error: "bg-[#ff3b30]", warning: "bg-[#ff9f0a]", info: "bg-muted-foreground/60" } as const;
+const TIPS = [
+  "Drag me onto a page and I'll check just that one.",
+  "Press L to open or close me.",
+  "Ignore a finding and I won't bring it up again.",
+  "Write your house rules and Claude checks them for you.",
+  "Ask me for a joke when the build is slow.",
+];
 
-/* ---------- buddy ---------- */
-type Run = { progress: Progress | null; findings: Finding[]; rulesId: string | null; rulesState: "idle" | "waiting" | "done" | "skipped"; finishedAt: number | null; checks: CheckId[] };
+type V = { x: number; y: number };
+type Run = {
+  progress: Progress | null; findings: Finding[]; rulesId: string | null; rulesState: "idle" | "waiting" | "done" | "skipped";
+  finishedAt: number | null; checks: CheckId[]; focus: string | null;
+};
+const ago = (t: number) => {
+  const m = Math.round((Date.now() - t) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 60 * 24 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+};
 
-export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, onCounts, onInspecting }: {
+export function Buddy({ manifest, chat, base, canvas, tab, selectedViewId, parkLeft = 0, onShowView, onFix, onFixMany, onCounts, onInspecting }: {
   manifest: Manifest; chat: ChatState; base: string; canvas: React.RefObject<CanvasHandle | null>; tab: string;
-  onShowView: (id: string) => void; onFix: (f: Finding) => void;
+  /** The page that's selected on the canvas, so you can check it without dragging Lou */
+  selectedViewId: string | null;
+  /** Move his resting spot this far left, so he doesn't sit on top of a drawer */
+  parkLeft?: number;
+  onShowView: (id: string) => void; onFix: (f: Finding) => void; onFixMany: (fs: Finding[]) => void;
   onCounts: (c: Record<string, number>) => void; onInspecting: (id: string | null) => void;
 }) {
+  const project = manifest.project.name;
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"home" | "rules">("home");
   const [checks, setChecks] = useState<Set<CheckId>>(() => {
     try { const s = JSON.parse(localStorage.getItem("loupe-buddy-checks") || "null"); if (Array.isArray(s)) return new Set(s); } catch {}
     return new Set(CHECKS.map((c) => c.id));
   });
-  const [run, setRun] = useState<Run | null>(null);
+  // The last finished check is remembered per project
+  const [run, setRun] = useState<Run | null>(() => {
+    try { const r = JSON.parse(localStorage.getItem(`loupe-last-run:${project}`) || "null"); if (r?.finishedAt) return { ...r, progress: null, rulesState: "done" }; } catch {}
+    return null;
+  });
+  const [ignored, setIgnored] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(`loupe-ignored:${project}`) || "[]")); } catch { return new Set(); }
+  });
+  const [showIgnored, setShowIgnored] = useState(false);
   const [unseen, setUnseen] = useState(0);
   const [bubble, setBubble] = useState<string | null>(null);
+  const [joke, setJoke] = useState<{ setup: string; punch: string; shown: boolean } | null>(null);
   const [filter, setFilter] = useState<CheckId | "all">("all");
   const [sent, setSent] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
-  const [flyTo, setFlyTo] = useState<{ x: number; y: number } | null>(null);
+  const [flyTo, setFlyTo] = useState<V | null>(null);
+  const [dragging, setDragging] = useState<{ over: string | null } | null>(null);
+  const [wave, setWave] = useState(0);
+  const [laugh, setLaugh] = useState(0);
+  const [tip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)]);
   const abort = useRef<AbortController | null>(null);
   const bubbleEl = useRef<HTMLDivElement>(null);
-  const [wave, setWave] = useState(0);
   const greeted = useRef(false);
   const byId = useMemo(() => new Map(manifest.views.map((v) => [v.id, v])), [manifest.views]);
   const working = !!run && !run.finishedAt;
+  const conn = chat.conns.find((c) => c.status !== "offline");
 
   useEffect(() => { try { localStorage.setItem("loupe-buddy-checks", JSON.stringify([...checks])); } catch {} }, [checks]);
+  useEffect(() => { try { localStorage.setItem(`loupe-ignored:${project}`, JSON.stringify([...ignored])); } catch {} }, [ignored, project]);
+  useEffect(() => {
+    if (!run?.finishedAt || run.rulesState === "waiting") return;
+    try { localStorage.setItem(`loupe-last-run:${project}`, JSON.stringify({ ...run, progress: null })); } catch {}
+  }, [run, project]);
   useEffect(() => {
     if (!open) return;
     setUnseen(0);
     // Wave hello the first time you open him
     if (!greeted.current) { greeted.current = true; setWave((w) => w + 1); }
   }, [open]);
+  // L opens and closes him
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (e.key.toLowerCase() !== "l" || e.metaKey || e.ctrlKey || e.altKey || t.closest("input, textarea, [contenteditable=true]")) return;
+      setOpen((o) => !o);
+      setView("home");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const say = useCallback((text: string, ms = 5000) => { setBubble(text); setTimeout(() => setBubble((b) => (b === text ? null : b)), ms); }, []);
+
+  /** Where he hovers to inspect a view: inside the frame's top right corner */
+  const spotFor = (id: string): V | null => {
+    const p = canvas.current?.screenPoint(id);
+    if (!p) return null;
+    const x = Math.min(window.innerWidth - SIZE, Math.max(SIZE, p.x + p.w / 2 - 80));
+    const y = Math.min(window.innerHeight - SIZE, Math.max(SIZE + 60, p.y - p.h / 2 + 46));
+    return { x: x - (window.innerWidth - CORNER - SIZE / 2), y: y - (window.innerHeight - CORNER - SIZE / 2) };
+  };
 
   // Fly over the view being inspected (on the canvas tab)
   const progress = run?.progress;
   useEffect(() => {
+    if (dragging) return;
     const id = working && progress?.view ? progress.view.id : null;
     onInspecting(id);
     if (!id || tab !== "canvas") { setFlyTo(null); return; }
     canvas.current?.focus?.(id);
-    const t = setTimeout(() => {
-      const p = canvas.current?.screenPoint(id);
-      if (!p) return setFlyTo(null);
-      // Hover over the top right of the frame, holding the loupe over it
-      // He hovers inside the frame's top right corner, holding the lens over the page
-      const x = Math.min(window.innerWidth - SIZE, Math.max(SIZE, p.x + p.w / 2 - 80));
-      const y = Math.min(window.innerHeight - SIZE, Math.max(SIZE + 60, p.y - p.h / 2 + 46));
-      setFlyTo({ x: x - (window.innerWidth - CORNER - SIZE / 2), y: y - (window.innerHeight - CORNER - SIZE / 2) });
-    }, 480);
+    const t = setTimeout(() => setFlyTo(spotFor(id)), 480);
     return () => clearTimeout(t);
   }, [working, progress?.view?.id, tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -73,62 +126,112 @@ export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, on
   useEffect(() => {
     if (!run || run.rulesState !== "waiting" || !rulesPrompt) return;
     if (rulesPrompt.status === "findings") {
-      const extra = ruleFindings(rulesPrompt.findings ?? [], manifest);
+      const extra = ruleFindings(rulesPrompt.findings ?? [], manifest).filter((f) => !run.focus || f.views.includes(run.focus));
       setRun((r) => r && { ...r, findings: [...r.findings, ...extra], rulesState: "done" });
-      if (!open && extra.length) { setUnseen((n) => n + extra.length); say(`Claude checked the house rules: ${extra.length ? `${extra.length} thing${extra.length > 1 ? "s" : ""} to look at` : "all good"}`); }
+      if (!open && extra.length) { setUnseen((n) => n + extra.length); say(`Claude checked the house rules: ${extra.length} thing${extra.length > 1 ? "s" : ""} to look at`); }
     } else if (rulesPrompt.status === "failed" || rulesPrompt.status === "cancelled") {
       setRun((r) => r && { ...r, rulesState: "skipped" });
     }
   }, [rulesPrompt?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const findings = (run?.findings ?? []).filter((f) => showIgnored || !ignored.has(findingKey(f)));
+  const ignoredCount = (run?.findings ?? []).filter((f) => ignored.has(findingKey(f))).length;
+
   // Counts per view for the red badges on the canvas
   useEffect(() => {
     const c: Record<string, number> = {};
-    for (const f of run?.findings ?? []) if (f.severity !== "info" && !sent.has(f.id)) for (const v of f.views) c[v] = (c[v] ?? 0) + 1;
+    for (const f of run?.findings ?? []) if (f.severity !== "info" && !sent.has(f.id) && !ignored.has(findingKey(f))) for (const v of f.views) c[v] = (c[v] ?? 0) + 1;
     onCounts(c);
-  }, [run?.findings, sent]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [run?.findings, sent, ignored]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const say = useCallback((text: string) => { setBubble(text); setTimeout(() => setBubble((b) => (b === text ? null : b)), 5000); }, []);
-
-  const start = async (only?: CheckId[]) => {
-    const list = only ?? [...checks];
+  const start = async (opts: { focus?: string } = {}) => {
+    const list = [...checks];
     if (!list.length) return;
     abort.current?.abort();
     const ac = new AbortController();
     abort.current = ac;
     setFilter("all");
     setSent(new Set());
-    setRun({ progress: null, findings: [], rulesId: null, rulesState: "idle", finishedAt: null, checks: list });
+    setJoke(null);
+    const focus = opts.focus ?? null;
+    setRun({ progress: null, findings: [], rulesId: null, rulesState: "idle", finishedAt: null, checks: list, focus });
     // House rules go to Claude in parallel with the page checks
     if (list.includes("rules")) {
-      const conn = chat.conns.find((c) => c.status !== "offline");
       const rules = await fetch("/api/rules").then((r) => r.json()).catch(() => ({ text: "" }));
-      if (!rules.text?.trim()) setRun((r) => r && { ...r, rulesState: "skipped" });
-      else if (!conn) setRun((r) => r && { ...r, rulesState: "skipped" });
+      if (!rules.text?.trim() || !conn) setRun((r) => r && { ...r, rulesState: "skipped" });
       else {
-        const r = await fetch("/api/audit/rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conn: conn.id, rules: rules.text, views: manifest.views.map((v) => ({ name: v.name, route: v.route, file: v.file })) }) }).then((x) => x.json()).catch(() => ({ ok: false }));
+        const views = (focus ? manifest.views.filter((v) => v.id === focus) : manifest.views).map((v) => ({ name: v.name, route: v.route, file: v.file }));
+        const r = await fetch("/api/audit/rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conn: conn.id, rules: rules.text, views }) }).then((x) => x.json()).catch(() => ({ ok: false }));
         setRun((s) => s && { ...s, rulesId: r.ok ? r.prompt.id : null, rulesState: r.ok ? "waiting" : "skipped" });
       }
     }
-    const res = await runAudit({ manifest, base, checks: new Set(list), signal: ac.signal, onProgress: (p) => setRun((r) => r && { ...r, progress: p }) });
+    const res = await runAudit({ manifest, base, checks: new Set(list), signal: ac.signal, focus: focus ?? undefined, onProgress: (p) => setRun((r) => r && { ...r, progress: p }) });
     if (ac.signal.aborted) return;
     setRun((r) => r && { ...r, findings: [...res.findings, ...r.findings], finishedAt: Date.now(), progress: { phase: "done", index: 0, total: 0 } });
-    const n = res.findings.filter((f) => f.severity !== "info").length;
-    if (!open) setUnseen((u) => u + res.findings.length);
-    say(n ? `I found ${n} thing${n > 1 ? "s" : ""} to fix` : res.findings.length ? "Looks good. A few tips" : "Everything looks good");
+    const fresh = res.findings.filter((f) => !ignored.has(findingKey(f)));
+    const n = fresh.filter((f) => f.severity !== "info").length;
+    if (!open) setUnseen((u) => u + fresh.length);
+    const where = focus ? ` on ${byId.get(focus)?.name}` : "";
+    say(n ? `I found ${n} thing${n > 1 ? "s" : ""} to fix${where}` : fresh.length ? `Looks good${where}. A few tips` : `Everything looks good${where}`);
     if (!n) setWave((w) => w + 1);
-    canvas.current?.fitAll();
+    if (!focus) canvas.current?.fitAll();
   };
   const stop = () => { abort.current?.abort(); setRun((r) => r && { ...r, finishedAt: Date.now(), progress: null }); setFlyTo(null); onInspecting(null); };
 
-  const findings = run?.findings ?? [];
+  /* ---------- picking him up ---------- */
+  const viewAt = (p: V) => {
+    if (tab !== "canvas") return null;
+    for (const el of document.elementsFromPoint(p.x, p.y)) {
+      const node = (el as HTMLElement).closest?.(".react-flow__node");
+      const id = node?.getAttribute("data-id");
+      if (id && byId.get(id) && !byId.get(id)!.dynamic) return id;
+    }
+    return null;
+  };
+  const onDrag = (p: V) => {
+    const over = viewAt(p);
+    if (over !== dragging?.over) onInspecting(over);
+    setDragging({ over });
+    setOpen(false);
+  };
+  const onDrop = (p: V) => {
+    const over = viewAt(p);
+    setDragging(null);
+    onInspecting(null);
+    if (!over) {
+      setFlyTo(null);
+      say(tab === "canvas" ? "Drop me on a page and I'll check it" : "Drop me on a page on the canvas", 3500);
+      return;
+    }
+    if (working) abort.current?.abort();
+    setFlyTo(spotFor(over));
+    start({ focus: over });
+  };
+
+  const tellJoke = () => {
+    const [setup, punch] = nextJoke();
+    setJoke({ setup, punch, shown: false });
+    if (!open) say(setup, 2400);
+    setTimeout(() => {
+      setJoke((j) => (j && j.setup === setup ? { ...j, shown: true } : j));
+      setLaugh((l) => l + 1);
+      if (!open) say(punch, 4200);
+    }, 2000);
+  };
+
   const shown = filter === "all" ? findings : findings.filter((f) => f.check === filter);
+  const fixable = shown.filter((f) => !sent.has(f.id) && !ignored.has(findingKey(f)));
   const counts = { error: findings.filter((f) => f.severity === "error").length, warning: findings.filter((f) => f.severity === "warning").length, info: findings.filter((f) => f.severity === "info").length };
   const mood: "calm" | "happy" | "worried" = run?.finishedAt && !working ? (counts.error ? "worried" : "happy") : "calm";
-  const pct = progress && progress.total ? Math.round(((progress.index + (progress.phase === "mobile" ? progress.total : 0)) / (progress.total * (run?.checks.includes("mobile") ? 2 : 1))) * 100) : 0;
-  const status = !run ? null
-    : working ? progress?.phase === "links" ? "Following every link…" : progress?.view ? `${progress.phase === "mobile" ? "Checking on mobile" : "Looking at"} ${progress.view.name} (${progress.index + 1} of ${progress.total})` : "Getting started…"
+  const total = progress?.total ?? 0;
+  const pct = progress && total ? Math.round(((progress.index + (progress.phase === "mobile" ? total : 0)) / (total * (run?.checks.includes("mobile") ? 2 : 1))) * 100) : 0;
+  const focusName = run?.focus ? byId.get(run.focus)?.name : null;
+  const status = dragging ? (dragging.over ? `Drop me on ${byId.get(dragging.over)?.name} to check it` : "Drop me on a page")
+    : !run ? null
+    : working ? progress?.phase === "links" ? "Following every link…" : progress?.view ? `${progress.phase === "mobile" ? "Checking on mobile:" : "Looking at"} ${progress.view.name}${total > 1 ? ` (${progress.index + 1} of ${total})` : ""}` : "Getting started…"
     : null;
+  const summary = !findings.length ? `Everything I checked${focusName ? ` on ${focusName}` : ""} looks good.`
+    : `I found ${[counts.error && `${counts.error} error${counts.error > 1 ? "s" : ""}`, counts.warning && `${counts.warning} warning${counts.warning > 1 ? "s" : ""}`, counts.info && `${counts.info} tip${counts.info > 1 ? "s" : ""}`].filter(Boolean).join(", ")}${focusName ? ` on ${focusName}` : ""}.`;
 
   return (
     <>
@@ -139,8 +242,13 @@ export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, on
             {view === "rules" && <Button variant="ghost" size="icon" className="-ml-1.5 size-7" onClick={() => setView("home")} aria-label="Back"><ArrowLeft size={14} /></Button>}
             <div className="min-w-0 flex-1">
               <h2 className="text-[14px] font-semibold">{view === "rules" ? "House rules" : NAME}</h2>
-              <p className="text-xs text-muted-foreground">{view === "rules" ? ".canvas/rules.md, shared with your team in git" : "Checks your whole project for you"}</p>
+              <p className="text-xs text-muted-foreground">
+                {view === "rules" ? ".canvas/rules.md, shared with your team in git" : run?.finishedAt && !working ? `Last check ${ago(run.finishedAt)}${focusName ? `, ${focusName} only` : ""}` : "Checks your project for you"}
+              </p>
             </div>
+            {view === "home" && (
+              <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" onClick={tellJoke} aria-label="Tell me a joke" title="Tell me a joke"><Smiley size={15} /></Button>
+            )}
             <Button variant="ghost" size="icon" className="-mr-1.5 size-7" onClick={() => setOpen(false)} aria-label="Close"><X size={14} /></Button>
           </header>
           {view === "rules" ? (
@@ -149,15 +257,26 @@ export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, on
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
               {/* What Lou says */}
               <div className="px-4 pt-4">
-                <p className="buddy-say text-[14px] leading-snug">
-                  {!run ? "Hi! I can look through every page and tell you what's off. What should I check?"
-                    : working ? status
-                    : findings.length ? `Done. I found ${counts.error ? `${counts.error} error${counts.error > 1 ? "s" : ""}` : ""}${counts.error && counts.warning ? ", " : ""}${counts.warning ? `${counts.warning} warning${counts.warning > 1 ? "s" : ""}` : ""}${(counts.error || counts.warning) && counts.info ? " and " : ""}${counts.info ? `${counts.info} tip${counts.info > 1 ? "s" : ""}` : ""}.`
-                    : "Done. Everything I checked looks good."}
-                </p>
+                {joke ? (
+                  <div className="text-[14px] leading-snug" aria-live="polite">
+                    <p>{joke.setup}</p>
+                    <p className={cn("mt-1 font-medium transition-opacity duration-300", joke.shown ? "opacity-100" : "opacity-0")}>{joke.punch}</p>
+                    <div className="mt-2 flex gap-1">
+                      <Button variant="ghost" size="sm" className="-ml-2 h-7 text-xs" onClick={tellJoke}>Another one</Button>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={() => setJoke(null)}>Back to work</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[14px] leading-snug">
+                      {!run ? "Hi! I can look through every page and tell you what's off. What should I check?" : working ? status : summary}
+                    </p>
+                    {!run && <p className="mt-1.5 text-xs text-muted-foreground">Tip: {tip}</p>}
+                  </>
+                )}
                 {working && <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-segment"><div className="h-full rounded-full bg-[var(--buddy)] transition-[width] duration-500" style={{ width: `${Math.max(4, pct)}%` }} /></div>}
                 {run && run.rulesState === "waiting" && <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><CircleNotch size={12} className="animate-spin" /> Claude is checking the house rules…</p>}
-                {run && run.rulesState === "skipped" && run.checks.includes("rules") && <p className="mt-2 text-xs text-muted-foreground">House rules weren't checked: {chat.conns.some((c) => c.status !== "offline") ? "there are no rules yet." : "no Claude Code chat is open."}</p>}
+                {run && run.rulesState === "skipped" && run.checks.includes("rules") && <p className="mt-2 text-xs text-muted-foreground">House rules weren't checked: {conn ? "there are no rules yet." : "no Claude Code chat is open."}</p>}
               </div>
 
               {!working && (
@@ -176,15 +295,18 @@ export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, on
                       );
                     })}
                   </div>
-                  <div className="mt-3 flex items-center gap-2">
-                    <Button className="bg-[var(--buddy)] hover:bg-[var(--buddy)]/90" onClick={() => start()} disabled={!checks.size}><MagnifyingGlass size={14} weight="bold" /> {run ? "Check again" : "Check the project"}</Button>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button className="bg-[var(--buddy)] hover:bg-[var(--buddy)]/90" onClick={() => start()} disabled={!checks.size}><MagnifyingGlass size={14} weight="bold" /> {run ? "Check everything again" : "Check the project"}</Button>
+                    {selectedViewId && byId.get(selectedViewId)?.url && !byId.get(selectedViewId)?.dynamic ? (
+                      <Button variant="outline" size="sm" onClick={() => { if (tab === "canvas") setFlyTo(spotFor(selectedViewId)); start({ focus: selectedViewId }); }}>Check {byId.get(selectedViewId)!.name} only</Button>
+                    ) : run?.focus ? <Button variant="outline" size="sm" onClick={() => { if (tab === "canvas") setFlyTo(spotFor(run.focus!)); start({ focus: run.focus! }); }}>Again on {focusName}</Button> : null}
                     <Button variant="ghost" size="sm" onClick={() => setView("rules")}><PencilSimple size={13} /> House rules</Button>
                   </div>
                 </div>
               )}
               {working && <div className="px-4 pt-3"><Button variant="outline" size="sm" onClick={stop}>Stop</Button></div>}
 
-              {!!findings.length && (
+              {!!(findings.length || ignoredCount) && !working && (
                 <div className="mt-4 border-t">
                   <div className="flex items-center gap-1 overflow-x-auto px-3 pt-2.5 pb-1">
                     {(["all", ...CHECKS.map((c) => c.id)] as const).map((k) => {
@@ -196,33 +318,59 @@ export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, on
                         </button>
                       );
                     })}
-                    <Button variant="ghost" size="icon" className="ml-auto size-7 shrink-0 text-muted-foreground" aria-label="Copy the report as Markdown" onClick={async () => { try { await navigator.clipboard.writeText(findingsMarkdown(manifest.project.name, findings, byId)); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {} }}>
+                    <Button variant="ghost" size="icon" className="ml-auto size-7 shrink-0 text-muted-foreground" aria-label="Copy the report as Markdown" title="Copy the report as Markdown" onClick={async () => { try { await navigator.clipboard.writeText(findingsMarkdown(project, findings, byId)); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {} }}>
                       {copied ? <Check size={14} /> : <Copy size={14} />}
                     </Button>
                   </div>
-                  <ul className="flex flex-col px-2 pb-3">
-                    {shown.map((f) => (
-                      <li key={f.id} className="rounded-xl px-2.5 py-2.5 hover:bg-accent">
-                        <div className="flex items-start gap-2.5">
-                          <span aria-label={f.severity} className={cn("mt-1.5 size-2 shrink-0 rounded-full", SEV[f.severity])} />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-[13px] leading-snug font-medium">{f.title}</p>
-                            {f.detail && <p className="mt-0.5 line-clamp-3 text-xs leading-[1.45] text-muted-foreground">{f.detail}</p>}
-                            <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                              {f.views.slice(0, 3).map((id) => (
-                                <button key={id} type="button" onClick={() => onShowView(id)} className="inline-flex h-6 items-center gap-1 rounded-md bg-segment px-1.5 text-[11px] font-medium outline-none hover:text-scope focus-visible:ring-2 focus-visible:ring-ring">
-                                  <Crosshair size={10} /> {byId.get(id)?.name ?? id}
-                                </button>
-                              ))}
-                              {f.views.length > 3 && <span className="text-[11px] text-muted-foreground">+{f.views.length - 3}</span>}
-                              <Button size="sm" variant={sent.has(f.id) ? "ghost" : "outline"} className="ml-auto h-6 rounded-md px-2 text-[11px]" disabled={sent.has(f.id) || !chat.conns.some((c) => c.status !== "offline")} onClick={() => { onFix(f); setSent((s) => new Set(s).add(f.id)); }}>
-                                {sent.has(f.id) ? <><Check size={11} /> Sent to Claude</> : <><Wrench size={11} /> Fix</>}
-                              </Button>
+                  {(fixable.length > 1 || ignoredCount > 0) && (
+                    <div className="flex items-center gap-2 px-4 pt-1 pb-1 text-xs text-muted-foreground">
+                      {ignoredCount > 0 && (
+                        <button type="button" className="inline-flex items-center gap-1 outline-none hover:text-foreground focus-visible:underline" onClick={() => setShowIgnored((s) => !s)}>
+                          {showIgnored ? <EyeSlash size={12} /> : <Eye size={12} />} {showIgnored ? "Hide" : "Show"} {ignoredCount} ignored
+                        </button>
+                      )}
+                      {fixable.length > 1 && (
+                        <Button size="sm" variant="outline" className="ml-auto h-6 rounded-md px-2 text-[11px]" disabled={!conn} onClick={() => { onFixMany(fixable); setSent((s) => { const n = new Set(s); fixable.forEach((f) => n.add(f.id)); return n; }); }}>
+                          <Wrench size={11} /> Fix all {fixable.length}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  <ul className="flex flex-col px-2 pb-1">
+                    {shown.map((f) => {
+                      const isIgnored = ignored.has(findingKey(f));
+                      return (
+                        <li key={f.id} className={cn("group/f rounded-xl px-2.5 py-2.5 hover:bg-accent", isIgnored && "opacity-55")}>
+                          <div className="flex items-start gap-2.5">
+                            <span aria-label={f.severity} className={cn("mt-1.5 size-2 shrink-0 rounded-full", SEV[f.severity])} />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[13px] leading-snug font-medium">{f.title}</p>
+                              {f.detail && <p className="mt-0.5 line-clamp-3 text-xs leading-[1.45] text-muted-foreground">{f.detail}</p>}
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                                {f.views.slice(0, 3).map((id) => (
+                                  <button key={id} type="button" onClick={() => onShowView(id)} className="inline-flex h-6 items-center gap-1 rounded-md bg-segment px-1.5 text-[11px] font-medium outline-none hover:text-scope focus-visible:ring-2 focus-visible:ring-ring">
+                                    <Crosshair size={10} /> {byId.get(id)?.name ?? id}
+                                  </button>
+                                ))}
+                                {f.views.length > 3 && <span className="text-[11px] text-muted-foreground">+{f.views.length - 3}</span>}
+                                <div className="ml-auto flex items-center gap-1">
+                                  <Button
+                                    size="sm" variant="ghost" className="h-6 rounded-md px-1.5 text-[11px] text-muted-foreground"
+                                    onClick={() => setIgnored((s) => { const n = new Set(s); const k = findingKey(f); if (n.has(k)) n.delete(k); else n.add(k); return n; })}
+                                    aria-label={isIgnored ? "Stop ignoring this" : "Ignore this"} title={isIgnored ? "Stop ignoring this" : "Ignore this from now on"}
+                                  >
+                                    {isIgnored ? <Eye size={12} /> : <EyeSlash size={12} />}
+                                  </Button>
+                                  <Button size="sm" variant={sent.has(f.id) ? "ghost" : "outline"} className="h-6 rounded-md px-2 text-[11px]" disabled={sent.has(f.id) || !conn || isIgnored} onClick={() => { onFix(f); setSent((s) => new Set(s).add(f.id)); }}>
+                                    {sent.has(f.id) ? <><Check size={11} /> Sent to Claude</> : <><Wrench size={11} /> Fix</>}
+                                  </Button>
+                                </div>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </li>
-                    ))}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}
@@ -232,22 +380,25 @@ export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, on
       )}
 
       {/* Short remarks when the panel is closed */}
-      {!open && (bubble || (working && status)) && (
+      {!open && (bubble || status) && (
         <div className="pointer-events-none absolute z-40" style={{ right: CORNER + SIZE - 4, bottom: CORNER + SIZE - 2 }} ref={bubbleEl}>
-          <div role="status" className="buddy-bubble island max-w-[240px] rounded-[14px] rounded-br-[4px] px-3 py-2 text-[12.5px] leading-snug whitespace-nowrap">
-            {working && status ? status : bubble}
+          <div role="status" className="buddy-bubble island max-w-[260px] rounded-[14px] rounded-br-[4px] px-3 py-2 text-[12.5px] leading-snug">
+            {status && (working || dragging) ? status : bubble}
           </div>
         </div>
       )}
 
       {/* Lou */}
       <LouFigure
-        to={flyTo ?? { x: 0, y: 0 }}
+        to={flyTo ?? { x: -parkLeft, y: 0 }}
         mode={working ? "inspecting" : mood === "worried" ? "concerned" : mood === "happy" ? "happy" : "idle"}
         wave={wave}
-        label={`${NAME}, your helper${unseen ? `, ${unseen} new findings` : ""}`}
+        laugh={laugh}
+        label={`${NAME}, your helper${unseen ? `, ${unseen} new findings` : ""}. Drag him onto a page to check it.`}
         expanded={open}
         onClick={() => { setOpen((o) => !o); setView("home"); }}
+        onDrag={onDrag}
+        onDrop={onDrop}
         bubbleRef={bubbleEl}
         right={CORNER}
         bottom={CORNER}

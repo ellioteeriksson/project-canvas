@@ -12,6 +12,8 @@ export type Finding = {
   id: string; check: CheckId; severity: Severity; title: string; detail?: string;
   views: string[]; fix: string;
 };
+/** Same problem, same key, from one run to the next (used to ignore findings) */
+export const findingKey = (f: Pick<Finding, "check" | "title">) => `${f.check}:${f.title}`;
 export const CHECKS: { id: CheckId; label: string; blurb: string }[] = [
   { id: "consistency", label: "Consistency", blurb: "Pages share the same header, footer, type and layout; subpages match their siblings" },
   { id: "rules", label: "House rules", blurb: "Claude checks the project against your rules file" },
@@ -184,21 +186,36 @@ function a11y(reports: Map<string, Report>, byId: Map<string, View>): Finding[] 
     if (A.inputsNoLabel.length) out.push(F({ check: "a11y", severity: "error", title: `Form fields without labels on ${v.name}`, views: [id], fix: `On ${where(v)}, add a <label> (or aria-label) to: ${A.inputsNoLabel.map((u) => u.selector).join(", ")}.` }));
     if (A.h1Count !== 1) out.push(F({ check: "a11y", severity: "warning", title: A.h1Count ? `${A.h1Count} h1 headings on ${v.name}` : `No h1 on ${v.name}`, views: [id], detail: "Each page should have exactly one main heading.", fix: `On ${where(v)}, make sure there's exactly one h1 (the page's main heading); turn the others into h2.` }));
     if (A.skips.length) out.push(F({ check: "a11y", severity: "info", title: `Headings skip levels on ${v.name}`, views: [id], detail: A.skips.slice(0, 4).join(", "), fix: `On ${where(v)}, fix the heading order so levels don't skip (${A.skips.join(", ")}); keep the look with classes, not heading levels.` }));
-    if (!r.lang) out.push(F({ check: "a11y", severity: "warning", title: `No language set on ${v.name}`, views: [id], fix: `Add a lang attribute to the <html> element (for example lang="sv" or lang="en") for ${where(v)}.` }));
   }
+  const noLang = [...reports].filter(([, r]) => !r.lang).map(([id]) => id);
+  out.push(...grouped(noLang, byId, { check: "a11y", severity: "warning", what: "No language set", fix: (p) => `Add a lang attribute to the <html> element (for example lang="sv" or lang="en") for ${p}.` }));
   return out;
+}
+
+/** The same problem on several pages is one finding, not one per page */
+function grouped(ids: string[], byId: Map<string, View>, base: Omit<Finding, "id" | "views" | "title" | "fix"> & { what: string; fix: (pages: string) => string }): Finding[] {
+  if (!ids.length) return [];
+  const pages = names(ids, byId);
+  const one = ids.length === 1;
+  return [F({
+    check: base.check, severity: base.severity, detail: base.detail ?? (one ? undefined : list(pages, 8)), views: ids,
+    title: one ? `${base.what} on ${pages[0]}` : ids.length === byId.size || ids.length > 6 ? `${base.what} on ${ids.length} pages` : `${base.what} on ${list(pages)}`,
+    fix: base.fix(one ? where(byId.get(ids[0])!) : `these pages: ${pages.map((p) => `"${p}"`).join(", ")}`),
+  })];
 }
 
 function seo(reports: Map<string, Report>, byId: Map<string, View>): Finding[] {
   const out: Finding[] = [];
   const titles = new Map<string, string[]>();
+  const noTitle: string[] = [], noDesc: string[] = [], noImg: string[] = [];
   for (const [id, r] of reports) {
-    const v = byId.get(id)!;
-    if (!r.title) out.push(F({ check: "seo", severity: "error", title: `No page title on ${v.name}`, views: [id], fix: `Give ${where(v)} a descriptive <title>.` }));
-    else titles.set(r.title, [...(titles.get(r.title) ?? []), id]);
-    if (!r.description) out.push(F({ check: "seo", severity: "warning", title: `No meta description on ${v.name}`, views: [id], fix: `Add a meta description (around 150 characters, specific to the page) to ${where(v)}.` }));
-    if (!r.ogImage) out.push(F({ check: "seo", severity: "info", title: `No share image on ${v.name}`, views: [id], fix: `Add an og:image (and og:title) to ${where(v)} so links to it get a preview when shared.` }));
+    if (!r.title) noTitle.push(id); else titles.set(r.title, [...(titles.get(r.title) ?? []), id]);
+    if (!r.description) noDesc.push(id);
+    if (!r.ogImage) noImg.push(id);
   }
+  out.push(...grouped(noTitle, byId, { check: "seo", severity: "error", what: "No page title", fix: (p) => `Give ${p} a descriptive <title> each.` }));
+  out.push(...grouped(noDesc, byId, { check: "seo", severity: "warning", what: "No meta description", fix: (p) => `Add a meta description (around 150 characters, specific to each page) to ${p}.` }));
+  out.push(...grouped(noImg, byId, { check: "seo", severity: "info", what: "No share image", fix: (p) => `Add an og:image (and og:title) to ${p} so links get a preview when shared.` }));
   for (const [t, ids] of titles) if (ids.length > 1) out.push(F({ check: "seo", severity: "warning", title: `${ids.length} pages share the title “${t.slice(0, 50)}”`, views: ids, detail: list(names(ids, byId)), fix: `Give each of ${list(names(ids, byId).map((n) => `"${n}"`))} its own page title instead of “${t}”.` }));
   return out;
 }
@@ -238,10 +255,19 @@ async function links(reports: Map<string, Report>, byId: Map<string, View>): Pro
 /* ---------- running it ---------- */
 export type Progress = { phase: "pages" | "mobile" | "links" | "rules" | "done"; view?: View; index: number; total: number };
 
-export async function runAudit({ manifest, base, checks, signal, onProgress }: {
+export async function runAudit({ manifest, base, checks, signal, onProgress, focus }: {
   manifest: Manifest; base: string; checks: Set<CheckId>; signal: AbortSignal; onProgress: (p: Progress) => void;
+  /** Check just this view. Its siblings and the home page are measured too, as a reference for consistency */
+  focus?: string;
 }): Promise<{ findings: Finding[]; failed: { view: View; error: string }[] }> {
-  const views = manifest.views.filter((v) => v.url && !v.dynamic);
+  const all = manifest.views.filter((v) => v.url && !v.dynamic);
+  const target = focus ? all.find((v) => v.id === focus) : undefined;
+  const refs = target ? [
+    ...all.filter((v) => v.id !== target.id && parentOf(v.route) === parentOf(target.route)).slice(0, 4),
+    ...all.filter((v) => v.route === "/" && v.id !== target.id),
+  ] : [];
+  const views = target ? [target, ...refs.filter((v, i, a) => a.findIndex((x) => x.id === v.id) === i)] : all;
+  const shown = target ? [target] : views; // the tour only visits the page you asked about
   const byId = new Map(manifest.views.map((v) => [v.id, v]));
   const desk = new Map<string, Report>();
   const mob = new Map<string, Report>();
@@ -251,29 +277,32 @@ export async function runAudit({ manifest, base, checks, signal, onProgress }: {
   // One page at a time keeps the tour readable and the dev server calm
   if (needDesk) {
     for (let i = 0; i < views.length && !signal.aborted; i++) {
-      onProgress({ phase: "pages", view: views[i], index: i, total: views.length });
+      if (shown.includes(views[i])) onProgress({ phase: "pages", view: views[i], index: shown.indexOf(views[i]), total: shown.length });
       const r = await measure(base, views[i], manifest.viewport === "mobile" ? 390 : 1440, signal);
       if ("error" in r) { if (!signal.aborted) failed.push({ view: views[i], error: r.error }); } else desk.set(views[i].id, r);
     }
   }
   if (checks.has("mobile")) {
-    for (let i = 0; i < views.length && !signal.aborted; i++) {
-      onProgress({ phase: "mobile", view: views[i], index: i, total: views.length });
-      const r = await measure(base, views[i], 390, signal);
-      if (!("error" in r)) mob.set(views[i].id, r);
+    for (let i = 0; i < shown.length && !signal.aborted; i++) {
+      onProgress({ phase: "mobile", view: shown[i], index: i, total: shown.length });
+      const r = await measure(base, shown[i], 390, signal);
+      if (!("error" in r)) mob.set(shown[i].id, r);
     }
   }
   if (signal.aborted) return { findings: [], failed };
   const findings: Finding[] = [];
   if (checks.has("consistency")) findings.push(...consistency(desk, byId));
-  if (checks.has("tokens")) findings.push(...tokens(desk, byId, manifest));
-  if (checks.has("a11y")) findings.push(...a11y(desk, byId));
-  if (checks.has("seo")) findings.push(...seo(desk, byId));
+  // Page checks only look at the pages you asked about
+  const own = target ? new Map([...desk].filter(([id]) => id === target.id)) : desk;
+  if (checks.has("tokens")) findings.push(...tokens(own, byId, manifest));
+  if (checks.has("a11y")) findings.push(...a11y(own, byId));
+  if (checks.has("seo")) findings.push(...seo(own, byId));
   if (checks.has("mobile")) findings.push(...mobile(mob, byId));
-  if (checks.has("links")) { onProgress({ phase: "links", index: 0, total: 1 }); findings.push(...(await links(desk, byId))); }
-  for (const f of failed) findings.push(F({ check: "links", severity: "error", title: `${f.view.name} didn't load`, detail: f.error, views: [f.view.id], fix: `${where(f.view)} fails to load or render (${f.error}). Find out why and fix it.` }));
+  if (checks.has("links")) { onProgress({ phase: "links", index: 0, total: 1 }); findings.push(...(await links(own, byId))); }
+  for (const f of failed.filter((x) => !target || x.view.id === target.id)) findings.push(F({ check: "links", severity: "error", title: `${f.view.name} didn't load`, detail: f.error, views: [f.view.id], fix: `${where(f.view)} fails to load or render (${f.error}). Find out why and fix it.` }));
   const order = { error: 0, warning: 1, info: 2 };
-  return { findings: findings.sort((a, b) => order[a.severity] - order[b.severity]), failed };
+  const kept = target ? findings.filter((f) => f.views.includes(target.id)) : findings;
+  return { findings: kept.sort((a, b) => order[a.severity] - order[b.severity]), failed };
 }
 
 /** Findings Claude reported for the house rules, matched to views by route. */

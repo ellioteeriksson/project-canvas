@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { GearSix, ArrowsClockwise, ArrowCounterClockwise, Images } from "@phosphor-icons/react";
+import { GearSix, ArrowsClockwise, ArrowCounterClockwise, Images, Keyboard } from "@phosphor-icons/react";
+import { usePref } from "@/lib/prefs";
 import type { Manifest } from "@/lib/types";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ export function SettingsPopover({ manifest }: { manifest: Manifest }) {
   const [preview, setPreview] = useState(manifest.previewRoute ?? "");
   useEffect(() => setDevUrl(manifest.devUrl), [manifest.devUrl]);
   useEffect(() => setPreview(manifest.previewRoute ?? ""), [manifest.previewRoute]);
+  const [lou, setLou] = usePref("lou", true);
 
   return (
     <Popover>
@@ -33,7 +35,7 @@ export function SettingsPopover({ manifest }: { manifest: Manifest }) {
           <label htmlFor="fw" className="text-[13px] font-medium">Framework</label>
           <select
             id="fw"
-            defaultValue="auto"
+            value={manifest.frameworkSetting ?? "auto"}
             onChange={(e) => api.config({ framework: e.target.value })}
             className="h-8 rounded-md border border-input bg-background px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
@@ -54,6 +56,15 @@ export function SettingsPopover({ manifest }: { manifest: Manifest }) {
           <Button variant="outline" size="sm" onClick={() => api.config({ positions: { ...manifest.positions, [manifest.mode]: {}, [`${manifest.mode}-full`]: {} } })}>
             <ArrowCounterClockwise size={14} /> Reset layout
           </Button>
+        </div>
+        <Separator />
+        <div className="flex flex-col gap-2">
+          <h3 className="text-[13px] font-medium">Just for you</h3>
+          <label className="flex items-center justify-between gap-3 text-[13px]">
+            <span>Show Lou, the helper</span>
+            <input type="checkbox" checked={lou} onChange={(e) => setLou(e.target.checked)} className="size-4 accent-[var(--scope)]" />
+          </label>
+          <Button variant="ghost" size="sm" className="-ml-2 self-start" onClick={() => window.dispatchEvent(new Event("loupe:shortcuts"))}><Keyboard size={14} /> Keyboard shortcuts</Button>
         </div>
         <p className="text-xs text-muted-foreground">
           Snapshots refresh by themselves when files change. Use Refresh snapshots after content changes outside the code, like CMS edits. Settings are saved to <span className="font-mono">.canvas/config.json</span>. Commit it so your team gets the same names and layout.

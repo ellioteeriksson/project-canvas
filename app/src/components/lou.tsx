@@ -45,12 +45,17 @@ function outline(sp: number, dir: number, wob: number, ph: number) {
   return d + "Z";
 }
 
-export function LouFigure({ to, mode, wave, label, onClick, expanded, children, bubbleRef, right, bottom }: {
+export function LouFigure({ to, mode, wave, laugh = 0, label, onClick, onDrag, onDrop, expanded, children, bubbleRef, right, bottom }: {
   /** Where he should be, as an offset from his home in the corner (screen pixels) */
   to: V;
   mode: LouMode;
   /** Bump this number to make him wave */
   wave: number;
+  /** Bump this number to make him laugh */
+  laugh?: number;
+  /** He can be picked up: called with pointer positions while dragging, and where he was let go */
+  onDrag?: (p: V) => void;
+  onDrop?: (p: V) => void;
   label: string;
   onClick: () => void;
   expanded: boolean;
@@ -62,8 +67,11 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
 }) {
   const root = useRef<HTMLButtonElement>(null);
   const el = useRef<Record<string, SVGElement | null>>({});
-  const live = useRef({ to, mode, wave });
-  live.current = { to, mode, wave };
+  const live = useRef({ to, mode, wave, laugh });
+  live.current = { to, mode, wave, laugh };
+  // Picking him up: a press that moves more than a few pixels is a drag, otherwise a click
+  const held = useRef<{ start: V; grab: V; dragging: boolean; at: V } | null>(null);
+  const home = () => ({ x: window.innerWidth - right - HIT / 2, y: window.innerHeight - bottom - HIT / 2 });
   const set = (k: string) => (n: SVGElement | null) => { el.current[k] = n; };
 
   useEffect(() => {
@@ -76,9 +84,10 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
       sx: 1, sy: 1, vsx: 0, vsy: 0, lean: 0, vlean: 0, fx: 0, fy: 0, vfx: 0, vfy: 0, wob: 0, ph: 0, o: 0, dir: 0, sp: 0, air: 0,
       chain: 0, vchain: 0, zoom: 0, handsOn: 0, handsUntil: 0,
       look: { x: 0, y: 0 }, lookT: { x: 0, y: 0 }, nextLook: 0, blink: 1, nextBlink: 2, t: 0,
-      wave: live.current.wave, waveUntil: 0,
+      wave: live.current.wave, waveUntil: 0, laugh: live.current.laugh, laughUntil: 0,
       hands: [{ x: -46, y: 12, vx: 0, vy: 0, r: 0 }, { x: 46, y: 12, vx: 0, vy: 0, r: 0 }],
       mouse: null as V | null,
+      last: { ...live.current.to } as V,
     };
     // hands live in screen space (drawing units) so they lag behind the body
     S.hands.forEach((h) => { h.x += S.pos.x * u; h.y += S.pos.y * u; });
@@ -92,9 +101,22 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
       S.t += dt;
       const L = live.current, E = el.current;
       if (L.wave !== S.wave) { S.wave = L.wave; S.waveUntil = S.t + 1.8; }
+      if (L.laugh !== S.laugh) { S.laugh = L.laugh; S.laughUntil = S.t + 1.3; }
+      const H = held.current?.dragging ? held.current : null;
 
-      // Start a trip when the goal changes
-      if (Math.hypot(L.to.x - S.goal.x, L.to.y - S.goal.y) > 2) {
+      // While he's held he follows the pointer closely; otherwise a goal change starts a trip
+      if (H) {
+        const h0 = home();
+        S.goal = { x: H.at.x - h0.x - H.grab.x, y: H.at.y - h0.y - H.grab.y };
+        S.move = null;
+        if (reduced) S.pos = { ...S.goal };
+        else {
+          const k = 1 - Math.pow(0.00002, dt);
+          const nx = lerp(S.pos.x, S.goal.x, k), ny = lerp(S.pos.y, S.goal.y, k);
+          if (Math.hypot(nx - S.pos.x, ny - S.pos.y) > 0.3) S.dir = Math.atan2(ny - S.pos.y, nx - S.pos.x);
+          S.pos = { x: nx, y: ny };
+        }
+      } else if (Math.hypot(L.to.x - S.goal.x, L.to.y - S.goal.y) > 2) {
         S.goal = { ...L.to };
         const dist = Math.hypot(S.goal.x - S.pos.x, S.goal.y - S.pos.y);
         if (reduced) S.pos = { ...S.goal };
@@ -103,7 +125,7 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
 
       let tx = 1, ty = 1, tl = 0;
       S.air = 0;
-      const prev = { ...S.pos };
+      if (H) S.air = 0.5; // dangling in the air
       if (S.move) {
         const m = S.move;
         m.t += dt;
@@ -122,7 +144,8 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
           }
         }
       }
-      const vx = ((S.pos.x - prev.x) / dt) * u, vy = ((S.pos.y - prev.y) / dt) * u;
+      const vx = ((S.pos.x - S.last.x) / dt) * u, vy = ((S.pos.y - S.last.y) / dt) * u;
+      S.last = { ...S.pos };
       S.sp = reduced ? 0 : Math.min(1, Math.hypot(vx, vy) / 800);
       if (S.sp > 0.02) {
         const ax = Math.abs(Math.cos(S.dir)), ay = Math.abs(Math.sin(S.dir)), st = S.sp * 0.15;
@@ -140,10 +163,13 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
       S.wob *= Math.pow(0.04, dt); S.ph += dt * 16;
       S.o = lerp(S.o, S.sp, 1 - Math.pow(0.004, dt));
 
+      const laughing = S.t < S.laughUntil;
+      if (laughing && !reduced) { ty += Math.abs(Math.sin(S.t * 22)) * 0.1 - 0.05; tx -= Math.abs(Math.sin(S.t * 22)) * 0.06 - 0.03; }
       // where he looks
-      const inspecting = L.mode === "inspecting" && !S.move;
+      const inspecting = L.mode === "inspecting" && !S.move && !H;
       S.zoom = lerp(S.zoom, inspecting ? 1 : 0, 1 - Math.pow(0.01, dt));
-      if (S.move) S.lookT = { x: Math.cos(S.dir), y: Math.sin(S.dir) * 0.6 };
+      if (H) S.lookT = { x: 0, y: 0.9 }; // looking down at where he'll land
+      else if (S.move) S.lookT = { x: Math.cos(S.dir), y: Math.sin(S.dir) * 0.6 };
       else if (inspecting) S.lookT = { x: 0.55, y: 0.6 };
       else if (S.t > S.nextLook) {
         const r = root.current?.getBoundingClientRect();
@@ -166,13 +192,13 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
       const waving = S.t < S.waveUntil && !S.move;
       const bob = (i: number) => Math.sin(S.t * 2 + i) * 2;
       const spots = [
-        { x: -46, y: 12 + bob(0), r: 0 },
-        waving ? { x: 44, y: -24 + Math.sin(S.t * 9) * 2, r: Math.sin(S.t * 9) * 28 - 10 }
+        H ? { x: -40, y: -8 + bob(0) * 2, r: 30 } : { x: -46, y: 12 + bob(0), r: 0 },
+        H ? { x: 40, y: -8 + bob(1) * 2, r: -30 } : waving ? { x: 44, y: -24 + Math.sin(S.t * 9) * 2, r: Math.sin(S.t * 9) * 28 - 10 }
           : inspecting ? { x: 35, y: -3, r: -20 } // a mitt at the monocle rim
           : { x: 46, y: 12 + bob(1), r: 0 },
       ];
       // Hands only come out when he has something to do: waving, inspecting, flying (and landing)
-      if (S.move || waving || inspecting) S.handsUntil = S.t + 0.6;
+      if (S.move || waving || inspecting || H) S.handsUntil = S.t + 0.6;
       S.handsOn = lerp(S.handsOn, S.t < S.handsUntil ? 1 : 0, 1 - Math.pow(reduced ? 0 : 0.0005, dt));
       const px = S.pos.x * u, py = S.pos.y * u;
       S.hands.forEach((h, i) => {
@@ -207,7 +233,7 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
       E.pupil?.setAttribute("cy", (S.look.y * 2).toFixed(2));
       E.glint?.setAttribute("cx", (2.4 + S.look.x * 2).toFixed(2));
       E.glint?.setAttribute("cy", (-2.4 + S.look.y * 2).toFixed(2));
-      const lift = inspecting ? 3 : waving || L.mode === "happy" ? 2.5 : 0;
+      const lift = inspecting || H ? 3.5 : waving || laughing || L.mode === "happy" ? 2.5 : 0;
       const bx = -12 + ex, by = -15 + ey - lift;
       E.brow?.setAttribute("d",
         L.mode === "concerned" ? `M${bx - 6} ${by - 1} Q${bx} ${by - 2} ${bx + 6} ${by + 2}`
@@ -215,8 +241,11 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
       const c0x = 13 + ex + 9, c0y = -7 + ey + 9;
       E.chain?.setAttribute("d", `M${c0x.toFixed(2)} ${c0y.toFixed(2)} Q${(c0x + 6 + S.chain).toFixed(2)} ${(c0y + 16).toFixed(2)} 26 22`);
       const mx = ex * 0.9, my = 14 + ey * 0.6;
+      E.mouth?.setAttribute("fill", laughing ? C.ink : "none");
       E.mouth?.setAttribute("d",
-        S.o > 0.25 ? `M${mx - 3} ${my} a3 ${2.4 + S.o * 2} 0 1 0 6 0 a3 ${2.4 + S.o * 2} 0 1 0 -6 0`
+        laughing ? `M${mx - 7} ${my - 1.5} Q${mx} ${my + 9} ${mx + 7} ${my - 1.5} Z`
+        : H ? `M${mx - 3} ${my} a3 4 0 1 0 6 0 a3 4 0 1 0 -6 0`
+        : S.o > 0.25 ? `M${mx - 3} ${my} a3 ${2.4 + S.o * 2} 0 1 0 6 0 a3 ${2.4 + S.o * 2} 0 1 0 -6 0`
         : L.mode === "concerned" ? `M${mx - 5} ${my + 2} Q${mx} ${my - 1} ${mx + 5} ${my + 2}`
         : waving || L.mode === "happy" ? `M${mx - 7} ${my - 1} Q${mx} ${my + 6} ${mx + 7} ${my - 1}`
         : inspecting ? `M${mx - 4} ${my + 1} Q${mx + 1} ${my + 3} ${mx + 5} ${my}`
@@ -247,10 +276,30 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
     <button
       ref={root}
       type="button"
-      onClick={onClick}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        const r = root.current!.getBoundingClientRect();
+        held.current = { start: { x: e.clientX, y: e.clientY }, grab: { x: e.clientX - (r.x + r.width / 2), y: e.clientY - (r.y + r.height / 2) }, dragging: false, at: { x: e.clientX, y: e.clientY } };
+        root.current!.setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        const h = held.current;
+        if (!h) return;
+        h.at = { x: e.clientX, y: e.clientY };
+        if (!h.dragging && Math.hypot(e.clientX - h.start.x, e.clientY - h.start.y) > 6 && onDrag) h.dragging = true;
+        if (h.dragging) onDrag?.(h.at);
+      }}
+      onPointerUp={(e) => {
+        const h = held.current;
+        held.current = null;
+        if (h?.dragging) { e.preventDefault(); onDrop?.({ x: e.clientX, y: e.clientY }); }
+        else if (h) onClick();
+      }}
+      onPointerCancel={() => { held.current = null; }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
       aria-expanded={expanded}
       aria-label={label}
-      className="absolute z-40 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className="absolute z-40 cursor-grab touch-none rounded-full outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:cursor-grabbing"
       style={{ right, bottom, width: HIT, height: HIT }}
     >
       <svg viewBox="-75 -75 150 150" width={px} height={px} aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 overflow-visible">

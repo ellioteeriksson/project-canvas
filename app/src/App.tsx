@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SidebarSimple, TreeStructure, FlowArrow, Swatches, Rows, ClockCounterClockwise } from "@phosphor-icons/react";
 import { ChangelogView } from "@/components/changelog-view";
 import { Buddy } from "@/components/buddy";
+import { ShortcutsDialog } from "@/components/shortcuts-dialog";
+import { usePref } from "@/lib/prefs";
 import type { Finding } from "@/lib/audit";
 import { useCanvasData, api } from "@/lib/api";
 import type { PickedElement } from "@/lib/types";
@@ -29,7 +31,10 @@ export default function App() {
   const [dsSection, setDsSection] = useState<DsSection>("tokens");
   const [sidebar, setSidebar] = useState(true);
   const [conceptId, setConceptId] = useState<string | null>(null);
+  const [conceptsTucked, setConceptsTucked] = useState(false);
   const [findingCounts, setFindingCounts] = useState<Record<string, number>>({});
+  const [louOn] = usePref("lou", true);
+  useEffect(() => { if (!louOn) { setFindingCounts({}); setInspectingId(null); } }, [louOn]);
   const [inspectingId, setInspectingId] = useState<string | null>(null);
   const canvas = useRef<CanvasHandle>(null);
   const selection = state.selection ?? null;
@@ -105,7 +110,7 @@ export default function App() {
             scopeName={selectionName ? (selection?.kind === "section" || selection?.kind === "elements" ? `${selectionName} on ${selection.viewName}` : selectionName) : null}
           />
           {conceptId && manifest && (
-            <ConceptDrawer id={conceptId} chat={chat} agents={agents} base={manifest.frameUrl || manifest.devUrl} onOpen={setConceptId} onClose={() => setConceptId(null)} />
+            <ConceptDrawer id={conceptId} chat={chat} agents={agents} base={manifest.frameUrl || manifest.devUrl} onOpen={setConceptId} onClose={() => setConceptId(null)} collapsed={conceptsTucked} setCollapsed={setConceptsTucked} />
           )}
         </main>
 
@@ -171,12 +176,14 @@ export default function App() {
           <ShipButton git={git} onDone={refreshGit} />
         </div>
 
-        <Buddy
+        {louOn && <Buddy
           manifest={manifest}
           chat={chat}
           base={manifest.frameUrl || manifest.devUrl}
           canvas={canvas}
           tab={tab}
+          parkLeft={conceptId && !conceptsTucked ? Math.min(860, window.innerWidth - 24) + 8 : 0}
+          selectedViewId={selection ? (selection.kind === "section" || selection.kind === "elements" ? selection.viewId : selection.kind === "view" ? selection.id : null) : null}
           onCounts={setFindingCounts}
           onInspecting={setInspectingId}
           onShowView={(id) => { setTab("canvas"); select(id); setTimeout(() => canvas.current?.focus(id), 60); }}
@@ -186,7 +193,14 @@ export default function App() {
             const conn = chat.conns.find((c) => c.status !== "offline");
             await api.prompt(f.fix, conn?.id ?? null, "direct");
           }}
-        />
+          onFixMany={async (fs: Finding[]) => {
+            // One prompt for a whole group, scoped to the project
+            await api.select(null);
+            const conn = chat.conns.find((c) => c.status !== "offline");
+            await api.prompt(`Fix these ${fs.length} problems Lou found in the project, one by one. Keep each change as small as it can be.\n\n${fs.map((f, i) => `${i + 1}. ${f.fix}`).join("\n")}`, conn?.id ?? null, "direct");
+          }}
+        />}
+        <ShortcutsDialog />
 
         {!connected && (
           <div role="status" className="island absolute top-[68px] left-1/2 z-30 -translate-x-1/2 px-3.5 py-2 text-muted-foreground">

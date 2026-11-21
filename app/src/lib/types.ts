@@ -10,6 +10,8 @@ export type Component = { id: string; name: string; file: string; group: "primit
 export type Manifest = {
   project: { name: string; root: string; framework: string };
   mode: "sitemap" | "flow"; modeSource: "auto" | "config";
+  /** What's chosen in .canvas/config.json, "auto" when detected */
+  frameworkSetting?: string;
   devUrl: string; frameUrl?: string; viewport: "desktop" | "mobile"; previewRoute: string | null;
   frameHeight: "viewport" | "full"; frameConcurrency: number; frameLayer: "live" | "wireframe";
   changedAt: Record<string, number>; globalFiles: string[];

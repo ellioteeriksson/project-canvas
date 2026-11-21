@@ -78,7 +78,7 @@ function ShotQueue({ p, base }: { p: CanvasPrompt; base: string }) {
 }
 
 /* ---------- drawer ---------- */
-export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id: string; chat: ChatState; agents: Agent[]; base: string; onOpen: (id: string) => void; onClose: () => void }) {
+export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose, collapsed, setCollapsed }: { id: string; chat: ChatState; agents: Agent[]; base: string; onOpen: (id: string) => void; onClose: () => void; collapsed: boolean; setCollapsed: (c: boolean) => void }) {
   useShots();
   const p = chat.prompts.find((x) => x.id === id);
   const applied = p?.applied ? chat.prompts.find((x) => x.id === p.applied) : undefined;
@@ -89,7 +89,6 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
   const round = useMemo(() => { let n = 1, cur = p; while (cur?.parent) { const par = chat.prompts.find((x) => x.id === cur!.parent); if (!par || par.mode !== "concepts") break; n++; cur = par; } return n; }, [p, chat.prompts]);
 
   useEffect(() => {

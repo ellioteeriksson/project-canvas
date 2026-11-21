@@ -189,6 +189,7 @@ export function scanProject(root, config = loadConfig(root)) {
     project: { name: config.name || pkg.name || path.basename(root), root, framework },
     mode: config.mode && config.mode !== "auto" ? config.mode : detectMode(root, views),
     modeSource: config.mode && config.mode !== "auto" ? "config" : "auto",
+    frameworkSetting: config.framework && config.framework !== "auto" ? config.framework : "auto",
     devUrl: config.devUrl || defaultDevUrl(root, framework) || "/__site",
     viewport: config.viewport || "desktop",
     previewRoute: config.previewRoute || null,

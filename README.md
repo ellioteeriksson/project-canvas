@@ -1,22 +1,26 @@
 # Loupe
 
-A Claude Code plugin that lays out every page or screen of your project on a live design canvas, next to your terminal.
+**See your whole project on one canvas, and point Claude Code at exactly the part you want changed.**
 
-- **Websites** appear as a **sitemap** (a tree by URL). **Products** appear as a **flow** (screens connected by the links and navigations found in the code).
-- Every view is a **snapshot** of the real page, visible at any zoom, in **Screen** or **Full page** height, as the **Live** design or as a **Wireframe**. Click **Interact** (or double-click) to use the live page right on the canvas.
-- **Sections tab:** every page broken into its designed sections (hero, features, footer …), paired with their components in code. Select a section to limit Claude to just that section.
-- **Highlight elements:** pick specific buttons, text, images or blocks in a view (**Select elements** on hover), and your next prompt changes only those.
-- **See Claude work:** while an agent reads or edits a view, its frame gets an orange ring and goes live, then the snapshot refreshes when it's done.
-- **Light, dark or system** theme for the canvas.
-- **Select a view, and your next prompt in Claude Code only affects that view.** Select nothing, and it affects the whole project.
-- **Design concepts:** with "4 concepts" on, a design request opens a drawer where Claude sketches 4 concepts, previewed on the real page. Add a comment to the one you like and pick it, and Claude builds it in the code. Not quite right? Ask for 4 new ones with feedback.
-- **Lou, the helper buddy:** click the little magenta clay figure with a monocle in the corner, and he checks the whole project. He hops from view to view in stop motion and peers at each one through his monocle, and reports what's off: pages that don't match (header, footer, type, subpages that break their siblings' template), your house rules (`.canvas/rules.md`, checked by Claude), off-token colors and fonts, accessibility, broken links, mobile and SEO. Findings get a red badge on the canvas and a Fix button that sends the fix to Claude.
-- **Changelog:** every change Claude makes, from the canvas or the chat, is logged with the request, the scope, Claude's summary and the files it touched. Export it as Markdown from the Changelog tab.
-- **Prompt from the canvas:** the prompt bar at the bottom sends a prompt straight to the Claude Code chat open in the project, with the current selection as its scope. Claude's answer and what it's doing show up in the canvas, so you don't have to switch windows.
-- A **Design system** tab shows your tokens, primitives (`components/ui`) and components, and which views use each one. Selecting a component scopes your prompts to it.
-- A **Ship** button at the top commits, pushes or opens a pull request.
+Loupe is a Claude Code plugin for designers and developers. It lays out every page or screen of your project as live frames on a canvas next to your terminal. Click a page, a section or a single button, type what should change, and Claude edits only that. A small clay helper named Lou checks the project for inconsistencies, broken links and accessibility problems, and hands the fixes to Claude.
 
-Built with shadcn/ui (Radix), Phosphor icons, React Flow and Tailwind v4. The server has no dependencies, and the UI comes prebuilt in `app/dist`, so you don't need to install anything.
+![The Loupe canvas: every page of a site as a sitemap, with the prompt bar at the bottom](docs/images/canvas-light.jpg)
+
+## What you can do
+
+- **See every view at once.** Websites appear as a sitemap (a tree by URL), products as a flow (screens connected by the navigation found in the code). Frames are real snapshots, in Screen or Full page height, Live or Wireframe, Desktop or Mobile. Double-click a frame to use the live page.
+- **Point, then prompt.** Select a view, a section (hero, features, footer …) or individual elements, and your next prompt only touches that. Prompt from the bar at the bottom of the canvas, or in Claude Code as usual. Loupe adds the scope either way.
+- **Pick from 4 concepts.** With **4 concepts** on, a design request opens a drawer where Claude sketches four directions, previewed on the real page. Comment on the one you like and pick it, and Claude builds it. Not quite right? Ask for four new ones.
+- **Let Lou check your work.** Click Lou in the corner to check the whole project, or drag him onto one page to check just that page. He reports pages that break their siblings' layout, your house rules, off-token colors and fonts, accessibility, broken links, mobile and SEO. Every finding has a **Fix** button that sends it to Claude, and **Fix all** sends them in one go. Ignore what doesn't matter to you, and he remembers. He also tells (bad) jokes.
+- **Know what changed.** The **Changelog** tab logs every change Claude makes with the request, the scope, Claude's summary and the files it touched. Export it as Markdown.
+- **See your design system.** Tokens, primitives and components, and which views use each. Select a component to scope prompts to it.
+- **Ship it.** Commit, push or open a pull request from the top bar, with a commit message Claude can draft from the diff.
+
+![Four concepts for a hero, previewed on the real page](docs/images/concepts.jpg)
+
+![Lou's findings after checking the project, in dark mode](docs/images/lou-findings.jpg)
+
+Light, dark or system theme. Press **?** in the canvas for keyboard shortcuts.
 
 ## Install
 
@@ -26,7 +30,7 @@ You need Claude Code and Node 20+. Run this in a terminal, or ask Claude to run 
 claude plugin marketplace add ellioteeriksson/loupe && claude plugin install loupe@loupe
 ```
 
-Start a new session, open a project and type `/loupe`. (Loupe used to be called Project Canvas: if you have that installed, remove it with `claude plugin uninstall project-canvas@project-canvas && claude plugin marketplace remove project-canvas`.) [INSTALL.md](INSTALL.md) has the details and troubleshooting.
+Start a new session, open a project and type `/loupe`. [INSTALL.md](INSTALL.md) has the details and troubleshooting.
 
 **Updates:**
 
@@ -60,6 +64,10 @@ The first time, Claude reads what was detected, checks whether the project is a 
 | Drag frames | Your layout is saved. Use Settings → Reset layout to undo it. |
 | Prompt bar / ⌘K | Send a prompt to the Claude Code chat open in this project. It's scoped to what's selected. Click the speech bubble to see earlier prompts and Claude's answers. |
 | Ship ▾ | Commit, commit & push, or commit + push + open a PR. If you're on `main`, it creates a branch first. **Write with Claude** drafts the commit message from the diff. |
+| Click Lou, or press L | Open Lou. **Check the project** checks every page; **Check {page} only** checks the selected page. |
+| Drag Lou onto a frame | Check just that page. The frame lights up while you hover it. |
+| Settings → Show Lou | Hide or show Lou. |
+| ? | Keyboard shortcuts. |
 
 ### Commands
 
@@ -100,6 +108,20 @@ claude --dangerously-load-development-channels plugin:loupe@loupe
 
 Claude Code asks you to confirm once at startup. In the desktop app, use `/loupe-listen` instead.
 
+### Lou's checks
+
+| Check | What Lou looks for |
+| --- | --- |
+| Consistency | Pages missing the header or footer the others have, different fonts, headline sizes or content widths, subpages that break their siblings' layout |
+| House rules | Your own rules in `.canvas/rules.md` (edit them from Lou's panel). Claude checks these, so a chat must be connected |
+| Design tokens | Colors and fonts that aren't in your design system, too many text sizes |
+| Accessibility | Missing alt text, low contrast, buttons and links without a name, form fields without labels, headings that skip levels, missing page language |
+| Links | Links that answer 404 or don't load, and placeholder `#` links |
+| Mobile | Pages that scroll sideways, text that's too small, a missing viewport tag |
+| SEO | Page titles, meta descriptions, share images, duplicate titles |
+
+The same problem on many pages is grouped into one finding. Lou only runs when you ask him to.
+
 ## Supported projects
 
 | Framework | Detected from |
@@ -112,6 +134,10 @@ Claude Code asks you to confirm once at startup. In the desktop app, use `/loupe
 
 If something is missed, add it in `.canvas/config.json` (`views`, `framework`, `devUrl`, `params` for dynamic routes). The skill documents every key. Commit `config.json`. `state.json` and `manifest.json` are gitignored automatically.
 
+## Privacy
+
+Loupe runs entirely on your machine. The canvas server listens on `127.0.0.1` only and refuses requests from other sites. Nothing is sent anywhere except through your own Claude Code session.
+
 ## Developing the UI
 
 ```bash
@@ -120,3 +146,7 @@ node ../server/index.mjs --project /path/to/project   # API on :4777
 npm run dev                                            # UI with hot reload, proxies /api
 npm run build                                          # writes app/dist (commit it)
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

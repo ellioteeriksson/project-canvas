@@ -106,7 +106,7 @@ The canvas has a prompt bar that sends prompts to a Claude Code chat open in the
 
 ## House rules and the helper buddy
 
-`.canvas/rules.md` holds the project's house rules in plain language (committed, shared with the team). The helper buddy in Loupe checks pages itself (consistency, tokens, accessibility, links, mobile, SEO) and asks Claude to check the house rules: that canvas prompt says so, and you answer it with `canvas_findings` (one entry per broken rule, with route, file and a one-line fix) without changing files. Fix prompts from the buddy arrive as normal canvas prompts.
+`.canvas/rules.md` holds the project's house rules in plain language (committed, shared with the team). The helper buddy in Loupe checks pages itself (consistency, tokens, accessibility, links, mobile, SEO) and asks Claude to check the house rules: that canvas prompt says so, and you answer it with `canvas_findings` (one entry per broken rule, with route, file and a one-line fix) without changing files. Fix prompts from the buddy (Lou) arrive as normal canvas prompts; "Fix all" sends several findings in one prompt, so fix them all and summarize per finding. Users can also drag Lou onto one view to check only that page.
 
 ## Agent activity layer
 
