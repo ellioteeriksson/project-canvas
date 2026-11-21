@@ -1,6 +1,6 @@
 {
   "name": "project-canvas",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "See every page or screen of a project on a live design canvas (sitemap for websites, flow for products), scope Claude's edits to the view you select, browse the design system, and commit, push or open a PR from the top bar.",
   "author": {
     "name": "Elliot Eriksson"

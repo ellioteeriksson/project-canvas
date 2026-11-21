@@ -37,7 +37,7 @@ const body = {
   at: Date.now(),
   // Which Claude Code process this is, so the canvas can pair the session with its prompt channel
   claudePid: sessionClaudePid(input.session_id),
-  prompt: event === "UserPromptSubmit" ? String(input.prompt || "").replace(/\s+/g, " ").slice(0, 90) : undefined,
+  prompt: event === "UserPromptSubmit" ? String(input.prompt || "").replace(/\s+/g, " ").slice(0, 400) : undefined,
 };
 
 try {

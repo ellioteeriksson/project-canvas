@@ -315,7 +315,7 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
                     "pointer-events-none absolute top-0 left-0 origin-top-left items-center gap-1 rounded-br-[4px] bg-scope px-1.5 py-0.5 font-medium whitespace-nowrap text-white",
                     on ? "flex" : "hidden group-hover/sec:flex group-focus-visible/sec:flex",
                   )}
-                  style={{ fontSize: 11, transform: "scale(min(var(--title-scale, 1), 3))" }}
+                  style={{ fontSize: 11, transform: "scale(min(var(--title-scale, 1), 1.5))" }}
                 >
                   {sec.name}
                 </span>

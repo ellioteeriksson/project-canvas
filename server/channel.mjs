@@ -14,7 +14,7 @@ import crypto from "node:crypto";
 
 const KEEP = 60;
 
-export function createChannelHub({ root, broadcast, scopeFor, isBusy }) {
+export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = () => {} }) {
   const file = path.join(root, ".canvas", "chat.json");
   const conns = new Map(); // conn id -> { id, claudePid, live, waiting, session, res, connectedAt, goneAt }
   const sessions = new Map(); // session id -> { claudePid, prompt, last }
@@ -78,6 +78,8 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy }) {
   }
   function deliver(p, via) {
     Object.assign(p, { status: "delivered", via, deliveredAt: now() });
+    const parent = p.parent ? prompts.find((x) => x.id === p.parent) : null;
+    onEvent("delivered", { ...p, parentText: parent?.text ?? null }, conns.get(p.conn));
     changed();
     return { id: p.id, text: p.full };
   }
@@ -141,7 +143,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy }) {
   function waiting(connId, on) {
     const c = conns.get(connId);
     if (!c) return {};
-    if (on) c.listen = true;
+    if (on) { c.listen = true; onEvent("waiting", null, c); }
     if (on) {
       // Calling canvas_wait again means the previous canvas prompt is finished
       for (const p of prompts) if (p.conn === connId && p.status === "delivered" && p.via === "listen") { p.status = "done"; p.doneAt = now(); }
@@ -166,6 +168,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy }) {
     const p = prompts.find((x) => x.id === id) || [...prompts].reverse().find((x) => x.conn === connId && x.status === "delivered");
     if (!p) return { ok: false, error: `No canvas prompt with id ${id}` };
     Object.assign(p, { status: "done", reply: String(text || "").slice(0, 4000), doneAt: now() });
+    onEvent("reply", p, conns.get(p.conn));
     changed();
     return { ok: true };
   }
@@ -337,5 +340,10 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy }) {
     return { ok: true };
   }
 
-  return { stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
+  /** Keys the changelog may have used for a session's work (before the chat was paired with it) */
+  function connKeys(session) {
+    return [...conns.values()].filter((c) => c.session === session).map((c) => `conn:${c.id}`);
+  }
+
+  return { connKeys, stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
 }

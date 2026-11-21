@@ -10,6 +10,7 @@ A Claude Code plugin that lays out every page or screen of your project on a liv
 - **Light, dark or system** theme for the canvas.
 - **Select a view, and your next prompt in Claude Code only affects that view.** Select nothing, and it affects the whole project.
 - **Design concepts:** with "4 concepts" on, a design request opens a drawer where Claude sketches 4 concepts, previewed on the real page. Add a comment to the one you like and pick it, and Claude builds it in the code. Not quite right? Ask for 4 new ones with feedback.
+- **Changelog:** every change Claude makes, from the canvas or the chat, is logged with the request, the scope, Claude's summary and the files it touched. Export it as Markdown from the Changelog tab.
 - **Prompt from the canvas:** the prompt bar at the bottom sends a prompt straight to the Claude Code chat open in the project, with the current selection as its scope. Claude's answer and what it's doing show up in the canvas, so you don't have to switch windows.
 - A **Design system** tab shows your tokens, primitives (`components/ui`) and components, and which views use each one. Selecting a component scopes your prompts to it.
 - A **Ship** button at the top commits, pushes or opens a pull request.
@@ -49,7 +50,7 @@ The first time, Claude reads what was detected, checks whether the project is a 
 | Then click a section inside it | Your prompts are scoped to just that section (hero, features, footer …). Hover shows the section names. Esc steps back to the page. |
 | Double-click a frame, or hover and click **Interact** | Use the live page inside the canvas. Esc exits. |
 | Hover a frame → **Select elements** | Pick buttons, text, images or blocks. Click selects, Shift-click adds, ↑ ↓ parent/child, Esc finishes. Prompts then only affect those elements. |
-| Screen / Full page, Live / Wireframe | Change the frame height or layer (toolbar at the top left of the canvas). |
+| Screen / Full page, Live / Wireframe | Change the frame height or layer (toolbar on the right edge of the canvas). |
 | ☾ in the top bar | Light, dark, or match system. |
 | Double-click a name | Rename the view. |
 | ⤢ / Shift+1 (canvas toolbar) | Zoom out to show the whole project. |

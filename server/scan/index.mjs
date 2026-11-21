@@ -210,10 +210,10 @@ export function writeManifest(root, manifest) {
   const dir = path.join(root, CANVAS_DIR);
   fs.mkdirSync(dir, { recursive: true });
   const gi = path.join(dir, ".gitignore");
-  if (!fs.existsSync(gi)) fs.writeFileSync(gi, "# Project Canvas runtime files (config.json is meant to be committed)\nstate.json\nmanifest.json\nsnapshots/\nchat.json\n");
+  if (!fs.existsSync(gi)) fs.writeFileSync(gi, "# Project Canvas runtime files (config.json is meant to be committed)\nstate.json\nmanifest.json\nsnapshots/\nchat.json\nchangelog.json\n");
   else {
     const cur = fs.readFileSync(gi, "utf8");
-    const missing = ["snapshots/", "chat.json"].filter((l) => !new RegExp(`^${l.replace(/[./]/g, "\\$&")}?$`, "m").test(cur));
+    const missing = ["snapshots/", "chat.json", "changelog.json"].filter((l) => !new RegExp(`^${l.replace(/[./]/g, "\\$&")}?$`, "m").test(cur));
     if (missing.length) fs.appendFileSync(gi, (cur.endsWith("\n") ? "" : "\n") + missing.join("\n") + "\n");
   }
   fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));

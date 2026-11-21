@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SidebarSimple, TreeStructure, FlowArrow, Swatches, Globe, Cube, Rows } from "@phosphor-icons/react";
+import { SidebarSimple, TreeStructure, FlowArrow, Swatches, Rows, ClockCounterClockwise } from "@phosphor-icons/react";
+import { ChangelogView } from "@/components/changelog-view";
 import { useCanvasData, api } from "@/lib/api";
 import type { PickedElement } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -18,10 +19,10 @@ import { PromptBar } from "@/components/prompt-bar";
 import { BrandMark } from "@/components/brand-mark";
 import { ConceptDrawer } from "@/components/concept-drawer";
 
-type Tab = "canvas" | "sections" | "design";
+type Tab = "canvas" | "sections" | "design" | "changelog";
 
 export default function App() {
-  const { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots, chat } = useCanvasData();
+  const { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots, chat, changelog } = useCanvasData();
   const [tab, setTab] = useState<Tab>("canvas");
   const [dsSection, setDsSection] = useState<DsSection>("tokens");
   const [sidebar, setSidebar] = useState(true);
@@ -68,51 +69,66 @@ export default function App() {
 
   const ModeIcon = manifest.mode === "flow" ? FlowArrow : TreeStructure;
   const isProduct = manifest.mode === "flow";
+  // Room the floating project panel takes on the left of the canvas
+  const insetLeft = sidebar ? 288 : 12;
   const selectionName = selection?.name ?? manifest.views.find((v) => v.id === selectedId)?.name ?? manifest.designSystem.components.find((c) => c.id === selectedId)?.name;
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-full flex-col">
-        {/* Top bar */}
-        <header className="relative flex h-[52px] shrink-0 items-center gap-2 border-b bg-chrome px-2.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={() => setSidebar((s) => !s)} aria-label={sidebar ? "Hide views list" : "Show views list"} aria-pressed={sidebar}>
-                <SidebarSimple size={17} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{sidebar ? "Hide" : "Show"} list</TooltipContent>
-          </Tooltip>
-          <div className="flex min-w-0 items-center gap-2.5 pr-2 pl-0.5">
-            <BrandMark />
-            <div className="min-w-0 leading-tight">
-              <h1 className="truncate text-[13px] font-semibold">{manifest.project.name}</h1>
-              <p className="hidden truncate text-[11px] text-muted-foreground md:block">
-                {isProduct ? <Cube size={10} className="mr-1 inline align-[-1px]" /> : <Globe size={10} className="mr-1 inline align-[-1px]" />}
-                {isProduct ? "Product" : "Website"}, {manifest.project.framework}
+      <div className="relative h-full overflow-hidden bg-paper" style={{ ["--inset-left" as string]: `${insetLeft}px` }}>
+        {/* The work fills the window; tools float above it */}
+        <main className="absolute inset-0">
+          {tab === "canvas" ? (
+            <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} agents={agents} edits={edits} snapshots={snapshots} selection={selection} onPickElements={pickElements} insetLeft={insetLeft} />
+          ) : (
+            <div className="absolute inset-0 pt-[68px]" style={{ paddingLeft: insetLeft }}>
+              {tab === "sections" ? (
+                <SectionsView manifest={manifest} snapshots={snapshots} selectedId={selectedId} onSelect={select} onShowView={openView} />
+              ) : tab === "changelog" ? (
+                <ChangelogView manifest={manifest} entries={changelog} />
+              ) : (
+                <DesignSystemView manifest={manifest} section={dsSection} selectedId={selectedId} onSelect={select} onOpenView={openView} />
+              )}
+            </div>
+          )}
+          <PromptBar
+            chat={chat}
+            agents={agents}
+            selection={selection}
+            insetLeft={insetLeft}
+            onClearScope={() => select(null)}
+            onConcepts={setConceptId}
+            scopeName={selectionName ? (selection?.kind === "section" || selection?.kind === "elements" ? `${selectionName} on ${selection.viewName}` : selectionName) : null}
+          />
+          {conceptId && manifest && (
+            <ConceptDrawer id={conceptId} chat={chat} agents={agents} base={manifest.frameUrl || manifest.devUrl} onOpen={setConceptId} onClose={() => setConceptId(null)} />
+          )}
+        </main>
+
+        {/* Project and views */}
+        <aside
+          className={cn("island absolute top-3 left-3 z-20 flex w-[264px] flex-col overflow-hidden transition-[height] duration-200", sidebar ? "bottom-3" : "h-[56px]")}
+          aria-label="Project"
+        >
+          <div className="flex h-[56px] shrink-0 items-center gap-2.5 pr-2 pl-3.5">
+            <BrandMark size={26} />
+            <div className="min-w-0 flex-1 leading-tight">
+              <h1 className="truncate text-[14px] font-semibold">{manifest.project.name}</h1>
+              <p className="truncate text-[11.5px] text-muted-foreground">
+                {isProduct ? "Product" : "Website"} <span className="font-mono text-[11px]">· {manifest.project.framework}</span>
               </p>
             </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="size-8 text-muted-foreground" onClick={() => setSidebar((s) => !s)} aria-label={sidebar ? "Hide views list" : "Show views list"} aria-pressed={sidebar}>
+                  <SidebarSimple size={17} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{sidebar ? "Hide" : "Show"} list</TooltipContent>
+            </Tooltip>
           </div>
-
-          <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="absolute left-1/2 -translate-x-1/2 max-lg:static max-lg:ml-2 max-lg:translate-x-0">
-            <TabsList>
-              <TabsTrigger value="canvas"><ModeIcon size={14} /> Canvas</TabsTrigger>
-              <TabsTrigger value="sections"><Rows size={14} /> Sections</TabsTrigger>
-              <TabsTrigger value="design"><Swatches size={14} /> Design system</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          <div className="ml-auto flex items-center gap-1.5">
-            <AgentIndicator agents={agents} manifest={manifest} onFocus={(id) => { setTab("canvas"); setTimeout(() => canvas.current?.focus(id), 60); }} />
-            <ThemeToggle />
-            <SettingsPopover manifest={manifest} />
-            <ShipButton git={git} onDone={refreshGit} />
-          </div>
-        </header>
-
-        <div className="flex min-h-0 flex-1">
-          <aside className={cn("shrink-0 overflow-hidden border-r bg-chrome transition-[width] duration-200", sidebar ? "w-[272px]" : "w-0 border-r-0")} aria-hidden={!sidebar}>
-            <div className="h-full w-[272px]">
+          {sidebar && (
+            <div className="min-h-0 flex-1 border-t">
               {tab !== "design" ? (
                 <ViewsSidebar
                   manifest={manifest}
@@ -128,33 +144,34 @@ export default function App() {
                 <DesignSystemSidebar manifest={manifest} section={dsSection} onSection={setDsSection} selectedId={selectedId} onPick={(id) => select(id)} />
               )}
             </div>
-          </aside>
-          <main className="relative min-w-0 flex-1 bg-paper">
-            {tab === "sections" ? (
-              <SectionsView manifest={manifest} snapshots={snapshots} selectedId={selectedId} onSelect={select} onShowView={openView} />
-            ) : tab === "canvas" ? (
-              <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} agents={agents} edits={edits} snapshots={snapshots} selection={selection} onPickElements={pickElements} />
-            ) : (
-              <DesignSystemView manifest={manifest} section={dsSection} selectedId={selectedId} onSelect={select} onOpenView={openView} />
-            )}
-            <PromptBar
-              chat={chat}
-              agents={agents}
-              selection={selection}
-              onClearScope={() => select(null)}
-              onConcepts={setConceptId}
-              scopeName={selectionName ? (selection?.kind === "section" || selection?.kind === "elements" ? `${selectionName} on ${selection.viewName}` : selectionName) : null}
-            />
-            {conceptId && manifest && (
-              <ConceptDrawer id={conceptId} chat={chat} agents={agents} base={manifest.frameUrl || manifest.devUrl} onOpen={setConceptId} onClose={() => setConceptId(null)} />
-            )}
-            {!connected && (
-              <div role="status" className="absolute top-3 left-1/2 -translate-x-1/2 rounded-md border bg-background px-3 py-1.5 text-muted-foreground shadow-sm">
-                Lost connection to the canvas server. Reconnecting…
-              </div>
-            )}
-          </main>
+          )}
+        </aside>
+
+        {/* Where you are */}
+        <div className="island absolute top-3 z-20 -translate-x-1/2 p-1" style={{ left: `calc(${insetLeft}px + (100% - ${insetLeft}px) / 2)` }}>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+            <TabsList className="bg-transparent [&_[data-state=active]]:bg-segment [&_[data-state=active]]:shadow-none dark:[&_[data-state=active]]:bg-white/12">
+              <TabsTrigger value="canvas"><ModeIcon size={15} /> Canvas</TabsTrigger>
+              <TabsTrigger value="sections"><Rows size={15} /> Sections</TabsTrigger>
+              <TabsTrigger value="design"><Swatches size={15} /> Design system</TabsTrigger>
+              <TabsTrigger value="changelog"><ClockCounterClockwise size={15} /> Changelog</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
+
+        {/* Actions */}
+        <div className="island absolute top-3 right-3 z-20 flex items-center gap-1 p-1.5">
+          <AgentIndicator agents={agents} manifest={manifest} onFocus={(id) => { setTab("canvas"); setTimeout(() => canvas.current?.focus(id), 60); }} />
+          <ThemeToggle />
+          <SettingsPopover manifest={manifest} />
+          <ShipButton git={git} onDone={refreshGit} />
+        </div>
+
+        {!connected && (
+          <div role="status" className="island absolute top-[68px] left-1/2 z-30 -translate-x-1/2 px-3.5 py-2 text-muted-foreground">
+            Lost connection to the canvas server. Reconnecting…
+          </div>
+        )}
       </div>
     </TooltipProvider>
   );

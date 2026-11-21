@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, CaretDown, CaretUp, Check, ChatCircleDots, Crosshair, ShieldWarning, Sparkle, SquaresFour, Warning, X } from "@phosphor-icons/react";
+import { ArrowUp, CaretDown, Check, ChatsCircle, Crosshair, ShieldWarning, Sparkle, SquaresFour, Warning, X } from "@phosphor-icons/react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import type { Agent, CanvasPrompt, ChatConn, ChatState, ChatStatus, Selection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const STATUS: Record<ChatStatus, { word: string; hint: string }> = {
@@ -34,7 +33,7 @@ function StatusDot({ status, className }: { status: ChatStatus; className?: stri
 const chatName = (c: ChatConn) => (c.label ? `“${c.label}”` : "New chat");
 
 /** Prompt bar: send a prompt from the canvas to a Claude Code chat open in this project. */
-export function PromptBar({ chat, agents, selection, scopeName, onClearScope, onConcepts }: { chat: ChatState; agents: Agent[]; selection: Selection | null; scopeName: string | null; onClearScope: () => void; onConcepts: (id: string) => void }) {
+export function PromptBar({ chat, agents, selection, scopeName, insetLeft = 12, onClearScope, onConcepts }: { chat: ChatState; agents: Agent[]; selection: Selection | null; scopeName: string | null; insetLeft?: number; onClearScope: () => void; onConcepts: (id: string) => void }) {
   const [concepts, setConcepts] = useState(() => { try { return localStorage.getItem("project-canvas-concepts") !== "off"; } catch { return true; } });
   const toggleConcepts = () => setConcepts((on) => { try { localStorage.setItem("project-canvas-concepts", on ? "off" : "on"); } catch {} return !on; });
   const [text, setText] = useState("");
@@ -49,6 +48,7 @@ export function PromptBar({ chat, agents, selection, scopeName, onClearScope, on
   const current = conns.find((c) => c.id === target) ?? conns[0] ?? null;
   const recent = chat.prompts.slice(-30);
   const latest = recent[recent.length - 1];
+  const showLatest = !open && latest && latest.status !== "cancelled" && !(latest.status === "done" && Date.now() - (latest.doneAt ?? 0) > 120_000);
 
   // ⌘K / Ctrl+K focuses the prompt
   useEffect(() => {
@@ -64,7 +64,7 @@ export function PromptBar({ chat, agents, selection, scopeName, onClearScope, on
     const el = input.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
   };
 
   const submit = async () => {
@@ -80,136 +80,122 @@ export function PromptBar({ chat, agents, selection, scopeName, onClearScope, on
     requestAnimationFrame(grow);
   };
 
-  const placeholder = !current ? "Open Claude Code in this project to send prompts from here" : scopeName ? `Ask Claude to change ${scopeName}…` : "Ask Claude to change the project…";
+  const placeholder = !current ? "Open Claude Code in this project to prompt from here" : scopeName ? "What should change here?" : "What should change in the project?";
+  const scopeTip = !selection ? "Click a page on the canvas to narrow the prompt" : selection.kind === "view" ? "Click a section in the page to narrow it further" : "Esc steps back out";
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
-      <div className="pointer-events-auto flex w-[600px] max-w-full flex-col gap-2">
+    <div className="pointer-events-none absolute bottom-5 z-20 flex justify-center px-4" style={{ left: insetLeft, right: 72 }}>
+      <div className="pointer-events-auto flex w-[640px] max-w-full flex-col items-center gap-2.5">
         {chat.permissions.map((p) => <PermissionCard key={p.request_id} p={p} />)}
 
-        <div className="overflow-hidden rounded-[16px] bg-background shadow-soft-lg ring-1 ring-black/[0.06] dark:ring-white/10">
-          {/* History */}
-          {open && (
-            <div ref={thread} className="max-h-[min(46vh,420px)] overflow-y-auto border-b" aria-label="Prompts sent from the canvas">
-              {recent.length ? (
-                <ol className="flex flex-col">
-                  {recent.map((p) => <PromptItem key={p.id} p={p} conns={chat.conns} agents={agents} onConcepts={onConcepts} />)}
-                </ol>
-              ) : (
-                <p className="px-4 py-6 text-center text-muted-foreground">Prompts you send from here show up in this list, with Claude's answers.</p>
-              )}
-              {recent.some((p) => ["done", "failed", "cancelled"].includes(p.status)) && (
-                <div className="flex justify-end px-3 pb-2">
+        {open && (
+          <div ref={thread} className="island max-h-[min(46vh,440px)] w-full overflow-y-auto" aria-label="Prompts sent from the canvas">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-chrome px-4 py-2.5">
+              <h2 className="text-[13px] font-semibold">Sent from the canvas</h2>
+              <div className="flex items-center gap-1">
+                {recent.some((p) => ["done", "failed", "cancelled"].includes(p.status)) && (
                   <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={() => api.clearPrompts()}>Clear finished</Button>
-                </div>
-              )}
-            </div>
-          )}
-          {!open && latest && latest.status !== "cancelled" && (
-            <button type="button" onClick={() => (latest.mode === "concepts" ? onConcepts(latest.id) : setOpen(true))} className="flex w-full items-center gap-2 border-b px-3 py-2 text-left text-xs outline-none hover:bg-accent focus-visible:bg-accent">
-              <PromptState p={latest} conns={chat.conns} agents={agents} compact onConcepts={onConcepts} />
-              <CaretUp size={12} className="ml-auto shrink-0 text-muted-foreground" />
-            </button>
-          )}
-
-          {/* Composer */}
-          <form
-            onSubmit={(e) => { e.preventDefault(); submit(); }}
-            className="flex flex-col gap-1.5 px-3 pt-2.5 pb-2"
-          >
-            <div className="flex items-center gap-2">
-              <span className={cn("inline-flex h-6 max-w-[60%] min-w-0 items-center gap-1 rounded-md text-xs font-medium", selection ? "bg-scope/12 pl-1.5 text-scope" : "bg-muted px-1.5 text-muted-foreground")}>
-                <Crosshair size={12} weight="bold" className="shrink-0" />
-                <span className="truncate">{scopeName ?? "Whole project"}</span>
-                {selection && (
-                  <button type="button" onClick={onClearScope} aria-label="Clear scope: prompt the whole project" className="grid size-6 shrink-0 place-items-center rounded-md outline-none hover:bg-scope/15 focus-visible:ring-2 focus-visible:ring-ring">
-                    <X size={11} weight="bold" />
-                  </button>
                 )}
-              </span>
-              <span className="hidden min-w-0 truncate text-xs text-muted-foreground md:inline">
-                {!selection ? "Click a page to narrow it down" : selection.kind === "view" ? "Click a section in the page to narrow further" : null}
-              </span>
-              <Button
-                type="button" variant="ghost" size="sm"
-                className="ml-auto h-6 gap-1 px-1.5 text-xs text-muted-foreground"
-                onClick={() => setOpen((o) => !o)} aria-expanded={open}
-              >
-                <ChatCircleDots size={14} />
-                {recent.length ? recent.length : null}
-                {open ? <CaretDown size={11} /> : <CaretUp size={11} />}
-                <span className="sr-only">{open ? "Hide" : "Show"} sent prompts</span>
-              </Button>
+                <Button variant="ghost" size="icon" className="size-7" onClick={() => setOpen(false)} aria-label="Hide sent prompts"><X size={14} /></Button>
+              </div>
             </div>
-            <textarea
-              ref={input}
-              rows={1}
-              value={text}
-              disabled={!current}
-              onChange={(e) => { setText(e.target.value); grow(); }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
-                if (e.key === "Escape") input.current?.blur();
-              }}
-              placeholder={placeholder}
-              aria-label="Prompt for Claude Code"
-              className="max-h-[168px] min-h-[24px] w-full resize-none bg-transparent py-1 text-[15px] leading-6 tracking-[-0.01em] outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
-            />
-            <div className="flex items-center gap-2">
-              <ChatPicker conns={conns} current={current} onPick={setTarget} />
-              <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={current ? STATUS[current.status].hint : undefined}>
-                {error ? <span className="text-destructive">{error}</span> : current ? STATUS[current.status].hint : "The prompt bar connects to chats with the Project Canvas plugin."}
-              </p>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button" variant="ghost" size="sm" onClick={toggleConcepts} aria-pressed={concepts}
-                    className={cn("h-8 shrink-0 gap-1.5 px-2 text-xs", concepts ? "bg-scope/12 text-scope hover:bg-scope/16 hover:text-scope" : "text-muted-foreground")}
-                  >
-                    <SquaresFour size={14} weight={concepts ? "fill" : "regular"} /> 4 concepts
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{concepts ? "On: Claude sketches 4 concepts to pick from before changing the code" : "Off: Claude changes the code straight away"}</TooltipContent>
-              </Tooltip>
-              <Kbd className="hidden lg:inline-flex">⌘K</Kbd>
-              <Button type="submit" size="icon" className="size-8 shrink-0 rounded-full" disabled={!current || !text.trim() || sending} aria-label="Send to Claude Code">
-                <ArrowUp size={16} weight="bold" />
-              </Button>
-            </div>
-          </form>
-        </div>
+            {recent.length ? (
+              <ol className="flex flex-col">
+                {recent.map((p) => <PromptItem key={p.id} p={p} conns={chat.conns} agents={agents} onConcepts={onConcepts} />)}
+              </ol>
+            ) : (
+              <p className="px-4 py-8 text-center text-muted-foreground">Prompts you send from here show up here, with Claude's answers.</p>
+            )}
+          </div>
+        )}
+
+        {showLatest && (
+          <button
+            type="button"
+            onClick={() => (latest.mode === "concepts" ? onConcepts(latest.id) : setOpen(true))}
+            className="island flex max-w-[90%] items-center gap-2 rounded-full py-1.5 pr-3.5 pl-3 text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <PromptState p={latest} conns={chat.conns} agents={agents} compact onConcepts={onConcepts} />
+          </button>
+        )}
+
+        <form onSubmit={(e) => { e.preventDefault(); submit(); }} className="island w-full rounded-[20px] px-4 pt-3.5 pb-3">
+          <div className="flex items-center">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className={cn("inline-flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-full text-xs font-medium", selection ? "bg-scope/12 pr-1 pl-2.5 text-scope" : "bg-segment px-2.5 text-muted-foreground")}>
+                  <Crosshair size={12} weight="bold" className="shrink-0" />
+                  <span className="truncate">{scopeName ?? "Whole project"}</span>
+                  {selection && (
+                    <button type="button" onClick={onClearScope} aria-label="Clear scope: prompt the whole project" className="grid size-5 shrink-0 place-items-center rounded-full outline-none hover:bg-scope/15 focus-visible:ring-2 focus-visible:ring-ring">
+                      <X size={10} weight="bold" />
+                    </button>
+                  )}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{scopeTip}</TooltipContent>
+            </Tooltip>
+          </div>
+          <textarea
+            ref={input}
+            rows={1}
+            value={text}
+            disabled={!current}
+            onChange={(e) => { setText(e.target.value); grow(); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
+              if (e.key === "Escape") input.current?.blur();
+            }}
+            placeholder={placeholder}
+            aria-label="Prompt for Claude Code"
+            className="mt-2.5 mb-3 max-h-[180px] min-h-[48px] w-full resize-none bg-transparent text-[15px] leading-6 tracking-[-0.011em] outline-none placeholder:text-muted-foreground/80 disabled:cursor-not-allowed"
+          />
+          <div className="flex items-center gap-1.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button" variant="ghost" size="sm" onClick={toggleConcepts} aria-pressed={concepts}
+                  className={cn("h-8 shrink-0 gap-1.5 rounded-full px-3 text-xs", concepts ? "bg-scope/12 text-scope hover:bg-scope/16 hover:text-scope" : "text-muted-foreground")}
+                >
+                  <SquaresFour size={14} weight={concepts ? "fill" : "regular"} /> 4 concepts
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{concepts ? "Claude sketches 4 concepts to pick from before it changes the code" : "Claude changes the code straight away"}</TooltipContent>
+            </Tooltip>
+            <ChatPicker conns={conns} current={current} onPick={setTarget} />
+            {error && <span className="min-w-0 truncate text-xs text-destructive">{error}</span>}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button type="button" variant="ghost" size="icon" className="ml-auto size-8 rounded-full text-muted-foreground" onClick={() => setOpen((o) => !o)} aria-pressed={open} aria-label={open ? "Hide sent prompts" : "Show sent prompts"}>
+                  <ChatsCircle size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Sent from the canvas</TooltipContent>
+            </Tooltip>
+            <Button type="submit" size="icon" className="size-8 shrink-0 rounded-full" disabled={!current || !text.trim() || sending} aria-label="Send to Claude Code (Enter)">
+              <ArrowUp size={16} weight="bold" />
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   );
 }
 
 function ChatPicker({ conns, current, onPick }: { conns: ChatConn[]; current: ChatConn | null; onPick: (id: string) => void }) {
-  if (!current) return <span className="inline-flex h-7 items-center gap-1.5 text-xs text-muted-foreground"><StatusDot status="offline" />No chat open</span>;
-  const label = (
-    <>
-      <StatusDot status={current.status} />
-      <span className="max-w-[180px] truncate">{chatName(current)}</span>
-      <span className="text-muted-foreground">{STATUS[current.status].word}</span>
-    </>
-  );
-  if (conns.length < 2 && !(current.listen && current.status !== "live")) return <span className="inline-flex h-7 min-w-0 shrink-0 items-center gap-1.5 text-xs">{label}</span>;
+  if (!current) return <span className="inline-flex h-8 items-center gap-1.5 px-2 text-xs text-muted-foreground"><StatusDot status="offline" />No chat open</span>;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 min-w-0 shrink-0 gap-1.5 px-1.5 text-xs" aria-label="Choose which Claude Code chat gets the prompt">
-          {label}
-          <CaretDown size={11} className="text-muted-foreground" />
+        <Button variant="ghost" size="sm" className="h-8 min-w-0 gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground" aria-label={`Sending to ${chatName(current)}, ${STATUS[current.status].word}. Choose chat`}>
+          <StatusDot status={current.status} />
+          <span className="max-w-[150px] truncate">{STATUS[current.status].word}</span>
+          <CaretDown size={10} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-80">
-        <DropdownMenuLabel>Send to</DropdownMenuLabel>
+        <DropdownMenuLabel className="font-normal text-muted-foreground">{STATUS[current.status].hint}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {current.listen && current.status !== "live" && (
-          <>
-            <DropdownMenuItem onSelect={() => api.stopListening(current.id)}>Stop listening in this chat</DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        )}
         {conns.map((c) => (
           <DropdownMenuItem key={c.id} onSelect={() => onPick(c.id)} className="flex items-start gap-2">
             <StatusDot status={c.status} className="mt-1.5" />
@@ -220,6 +206,12 @@ function ChatPicker({ conns, current, onPick }: { conns: ChatConn[]; current: Ch
             {c.id === current.id && <Check size={14} className="mt-1" />}
           </DropdownMenuItem>
         ))}
+        {current.listen && current.status !== "live" && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => api.stopListening(current.id)}>Stop listening in this chat</DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -119,7 +119,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id:
   return (
     <aside
       aria-label="Design concepts"
-      className="drawer-in absolute inset-y-0 right-0 z-30 flex w-[min(880px,100%)] flex-col border-l bg-chrome shadow-[-24px_0_60px_-40px_rgb(0_0_0/0.5)]"
+      className="drawer-in island absolute top-3 right-3 bottom-3 z-30 flex w-[min(860px,calc(100%-24px))] flex-col overflow-hidden rounded-[20px]"
     >
       <header className="flex items-start gap-3 border-b px-6 pt-5 pb-4">
         <div className="min-w-0 flex-1">

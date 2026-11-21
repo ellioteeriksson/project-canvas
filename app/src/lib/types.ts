@@ -57,3 +57,7 @@ export type CanvasPrompt = {
 export type PermissionRequest = { request_id: string; conn: string; tool_name: string; description: string; input_preview: string; at: number };
 export type ChatState = { conns: ChatConn[]; prompts: CanvasPrompt[]; permissions: PermissionRequest[] };
 export type Concept = { title: string; summary: string; css: string; replace: { selector: string; html: string }[] };
+export type ChangelogEntry = {
+  id: string; at: number; endAt?: number; source: "canvas" | "chat"; prompt: string | null; detail?: string | null;
+  scope?: string; mode?: string; promptId?: string; summary: string | null; files: string[]; inProgress?: boolean;
+};

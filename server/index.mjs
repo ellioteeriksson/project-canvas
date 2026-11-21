@@ -15,6 +15,7 @@ import { gitStatus, ship, aiMessage, heuristicMessage } from "./git.mjs";
 import { createFrameProxy, serveHelper, HELPER_TAG } from "./proxy.mjs";
 import { createSnapshotStore, computeChangedAt } from "./snapshots.mjs";
 import { createChannelHub } from "./channel.mjs";
+import { createChangelog } from "./changelog.mjs";
 import { buildScope } from "../scripts/scope.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -175,8 +176,18 @@ function previewInfo(sel) {
     selectors: sel?.kind === "elements" ? sel.elements.map((e) => e.selector) : [],
   };
 }
+const changelog = createChangelog({ root: ROOT, broadcast: (e, d) => broadcast(e, d) });
+const keyOf = (c) => c?.session || (c ? `conn:${c.id}` : null);
 const hub = createChannelHub({
   root: ROOT,
+  onEvent: (type, p, c) => {
+    if (type === "delivered" && keyOf(c)) {
+      const apply = p.mode === "apply";
+      changelog.start(keyOf(c), { source: "canvas", promptId: p.id, prompt: apply ? p.parentText || p.text : p.text, detail: apply ? p.text : null, scope: p.scope, mode: p.mode });
+    }
+    if (type === "reply") changelog.summary(p.id, p.reply);
+    if (type === "waiting" && c) { changelog.close(keyOf(c)); changelog.close(`conn:${c.id}`); }
+  },
   broadcast: (e, d) => broadcast(e, d),
   scopeFor: () => {
     const sel = readState().selection;
@@ -259,6 +270,7 @@ async function handle(req, res) {
     res.write(`event: activity\ndata: ${JSON.stringify(activityList())}\n\n`);
     res.write(`event: snapshots\ndata: ${JSON.stringify(snapshots.index)}\n\n`);
     res.write(`event: chat\ndata: ${JSON.stringify(hub.summary())}\n\n`);
+    res.write(`event: changelog\ndata: ${JSON.stringify(changelog.list())}\n\n`);
     clients.add(res);
     const ping = setInterval(() => res.write(": ping\n\n"), 20_000);
     req.on("close", () => { clients.delete(res); clearInterval(ping); });
@@ -315,6 +327,7 @@ async function handle(req, res) {
   if (req.method === "POST" && p === "/api/prompt/clear") return send(res, 200, hub.clear());
   if (req.method === "POST" && p === "/api/concepts/choose") { const r = hub.choose(await readBody(req)); return send(res, r.ok ? 200 : 400, r); }
   if (req.method === "POST" && p === "/api/concepts/again") { const r = hub.again(await readBody(req)); return send(res, r.ok ? 200 : 400, r); }
+  if (req.method === "POST" && p === "/api/changelog/clear") return send(res, 200, changelog.clear());
   if (req.method === "POST" && p === "/api/listen/stop") return send(res, 200, hub.stopListening((await readBody(req)).conn));
   if (req.method === "POST" && p === "/api/permission") { const b = await readBody(req); return send(res, 200, hub.verdict(b.request_id, b.behavior)); }
 
@@ -389,6 +402,11 @@ function pushActivity() {
 function recordActivity(ev) {
   hub.activity(ev);
   if (ev.phase === "hello") return;
+  if (ev.session && !ev.agent) {
+    if (ev.prompt && !/^\/canvas/.test(ev.prompt)) changelog.start(ev.session, { source: "chat", prompt: ev.prompt });
+    if (ev.phase === "done") { changelog.close(ev.session); hub.connKeys(ev.session).forEach((k) => changelog.close(k)); }
+  }
+  if (ev.phase === "edited" && ev.session) changelog.edited([ev.session, ...hub.connKeys(ev.session)], ev.file);
   const key = ev.agent || ev.session;
   const now = Date.now();
   if (ev.phase === "done") {

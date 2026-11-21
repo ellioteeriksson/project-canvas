@@ -35,6 +35,8 @@ type Props = {
   snapshots: SnapshotIndex;
   selection: Selection | null;
   onPickElements: (viewId: string, elements: PickedElement[]) => void;
+  /** Room taken by the floating project panel on the left */
+  insetLeft?: number;
   ref?: Ref<CanvasHandle>;
 };
 
@@ -46,7 +48,10 @@ export function CanvasView(props: Props) {
   );
 }
 
-function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, onPickElements, ref }: Props) {
+// Room the floating tools take: tabs on top, canvas toolbar on the right, prompt bar at the bottom
+const INSET = { top: 76, right: 72, bottom: 224 };
+
+function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, onPickElements, insetLeft = 12, ref }: Props) {
   const rf = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
   const mode = manifest.mode;
@@ -114,16 +119,20 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     }
     return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
   }, [rf]);
-  const fitAll = useCallback((duration = 450) => { const b = boundsOf(); if (b) rf.fitBounds(b, { padding: { top: "72px", bottom: "176px", left: "48px", right: "48px" }, duration }); }, [rf, boundsOf]);
+  const fitAll = useCallback((duration = 450) => { const b = boundsOf(); if (b) rf.fitBounds(b, { padding: { top: `${INSET.top}px`, bottom: `${INSET.bottom}px`, left: `${insetLeft + 36}px`, right: `${INSET.right + 12}px` }, duration }); }, [rf, boundsOf, insetLeft]);
   const focus = useCallback((id: string) => {
     const b = boundsOf([id]);
     if (!b) return;
     const el = wrapper.current;
     // Leave room for the title above the frame and a margin around it
-    // and keep it clear of the toolbar (top) and the prompt bar (bottom)
-    const zoom = el ? Math.min(3, (el.clientWidth - 96) / b.width, (el.clientHeight - 260) / b.height) : 1;
-    rf.setCenter(b.x + b.width / 2, b.y + b.height / 2 + 50 / zoom, { zoom, duration: 450 });
-  }, [rf, boundsOf]);
+    // and keep it clear of the floating tools
+    if (!el) return;
+    const W = el.clientWidth, H = el.clientHeight;
+    const visW = W - insetLeft - INSET.right, visH = H - INSET.top - INSET.bottom;
+    const zoom = Math.min(3, (visW - 48) / b.width, (visH - 24) / b.height);
+    const dx = (insetLeft + visW / 2 - W / 2) / zoom, dy = (INSET.top + visH / 2 - H / 2) / zoom;
+    rf.setCenter(b.x + b.width / 2 - dx, b.y + b.height / 2 - dy, { zoom, duration: 450 });
+  }, [rf, boundsOf, insetLeft]);
   const zoomToCenter = useCallback(() => {
     const el = wrapper.current;
     if (!el) return;
@@ -235,7 +244,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
           proOptions={{ hideAttribution: true }}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="var(--paper-dot)" />
-          <Panel position="top-left" className="!m-3">
+          <Panel position="center-right" className="!m-3">
             <CanvasToolbar manifest={manifest} onFit={() => fitAll()} onCenter={zoomToCenter} />
           </Panel>
           {pickingId && (
@@ -265,48 +274,41 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
   );
 }
 
-function Tip({ label, children }: { label: React.ReactNode; children: React.ReactElement }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-/** View options for the canvas, kept to one quiet row of icons. */
+/** View options for the canvas: one quiet column of icons on the right edge. */
 function CanvasToolbar({ manifest, onFit, onCenter }: { manifest: Manifest; onFit: () => void; onCenter: () => void }) {
   const { zoom } = useViewport();
-  const sep = <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />;
+  const sep = <span aria-hidden className="my-1 h-px w-5 bg-border" />;
+  const tip = (label: React.ReactNode, el: React.ReactElement) => (
+    <Tooltip><TooltipTrigger asChild>{el}</TooltipTrigger><TooltipContent side="left">{label}</TooltipContent></Tooltip>
+  );
+  const group = "flex flex-col gap-0.5 bg-transparent p-0";
+  const item = "size-9 rounded-[10px] px-0 [&_svg]:size-[17px] data-[state=on]:bg-segment data-[state=on]:shadow-none dark:data-[state=on]:bg-white/12";
+  const btn = "size-9 rounded-[10px] text-muted-foreground [&_svg]:size-[17px]";
   return (
-    <div className="flex items-center gap-0.5 rounded-[11px] bg-background p-[3px] shadow-soft-md ring-1 ring-black/[0.05] dark:ring-white/10 [&_[role=group]]:bg-transparent">
-      <ToggleGroup type="single" value={manifest.mode} onValueChange={(v) => v && api.config({ mode: v })} aria-label="Layout">
-        <Tip label="Sitemap: pages as a tree by URL"><ToggleGroupItem value="sitemap" aria-label="Sitemap layout"><TreeStructure size={15} /></ToggleGroupItem></Tip>
-        <Tip label="Flow: screens connected by their links"><ToggleGroupItem value="flow" aria-label="Flow layout"><FlowArrow size={15} /></ToggleGroupItem></Tip>
+    <div className="island flex flex-col items-center p-1.5" role="toolbar" aria-orientation="vertical" aria-label="Canvas view">
+      <ToggleGroup type="single" orientation="vertical" className={group} value={manifest.mode} onValueChange={(v) => v && api.config({ mode: v })} aria-label="Layout">
+        {tip("Sitemap: pages as a tree by URL", <ToggleGroupItem className={item} value="sitemap" aria-label="Sitemap layout"><TreeStructure /></ToggleGroupItem>)}
+        {tip("Flow: screens connected by their links", <ToggleGroupItem className={item} value="flow" aria-label="Flow layout"><FlowArrow /></ToggleGroupItem>)}
       </ToggleGroup>
       {sep}
-      <ToggleGroup type="single" value={manifest.frameHeight} onValueChange={(v) => v && api.config({ frameHeight: v })} aria-label="Frame height">
-        <Tip label="First screen of each page"><ToggleGroupItem value="viewport" aria-label="Show one screen of each page"><Rectangle size={15} /></ToggleGroupItem></Tip>
-        <Tip label="Full pages"><ToggleGroupItem value="full" aria-label="Show full pages"><ArrowsVertical size={15} /></ToggleGroupItem></Tip>
+      <ToggleGroup type="single" orientation="vertical" className={group} value={manifest.frameHeight} onValueChange={(v) => v && api.config({ frameHeight: v })} aria-label="Frame height">
+        {tip("First screen of each page", <ToggleGroupItem className={item} value="viewport" aria-label="Show one screen of each page"><Rectangle /></ToggleGroupItem>)}
+        {tip("Full pages", <ToggleGroupItem className={item} value="full" aria-label="Show full pages"><ArrowsVertical /></ToggleGroupItem>)}
       </ToggleGroup>
       {sep}
-      <ToggleGroup type="single" value={manifest.frameLayer} onValueChange={(v) => v && api.config({ frameLayer: v })} aria-label="Layer">
-        <Tip label="Design: pages as they look"><ToggleGroupItem value="live" aria-label="Design layer"><Browser size={15} /></ToggleGroupItem></Tip>
-        <Tip label="Wireframe: gray layout only"><ToggleGroupItem value="wireframe" aria-label="Wireframe layer"><Layout size={15} /></ToggleGroupItem></Tip>
+      <ToggleGroup type="single" orientation="vertical" className={group} value={manifest.frameLayer} onValueChange={(v) => v && api.config({ frameLayer: v })} aria-label="Layer">
+        {tip("Design: pages as they look", <ToggleGroupItem className={item} value="live" aria-label="Design layer"><Browser /></ToggleGroupItem>)}
+        {tip("Wireframe: gray layout only", <ToggleGroupItem className={item} value="wireframe" aria-label="Wireframe layer"><Layout /></ToggleGroupItem>)}
       </ToggleGroup>
       {sep}
-      <ToggleGroup type="single" value={manifest.viewport} onValueChange={(v) => v && api.config({ viewport: v })} aria-label="Frame size">
-        <Tip label="Desktop, 1440 wide"><ToggleGroupItem value="desktop" aria-label="Desktop frames"><Desktop size={15} /></ToggleGroupItem></Tip>
-        <Tip label="Mobile, 390 wide"><ToggleGroupItem value="mobile" aria-label="Mobile frames"><DeviceMobile size={15} /></ToggleGroupItem></Tip>
+      <ToggleGroup type="single" orientation="vertical" className={group} value={manifest.viewport} onValueChange={(v) => v && api.config({ viewport: v })} aria-label="Frame size">
+        {tip("Desktop, 1440 wide", <ToggleGroupItem className={item} value="desktop" aria-label="Desktop frames"><Desktop /></ToggleGroupItem>)}
+        {tip("Mobile, 390 wide", <ToggleGroupItem className={item} value="mobile" aria-label="Mobile frames"><DeviceMobile /></ToggleGroupItem>)}
       </ToggleGroup>
       {sep}
-      <Tip label={<>Show whole project <Kbd>⇧1</Kbd></>}>
-        <Button variant="ghost" size="icon" className="size-7" onClick={onFit} aria-label="Zoom to fit the whole project"><ArrowsOut size={15} /></Button>
-      </Tip>
-      <Tip label={<>Zoom to the view in the center <Kbd>⇧2</Kbd></>}>
-        <Button variant="ghost" size="icon" className="size-7" onClick={onCenter} aria-label="Zoom in to the view in the center"><Crosshair size={15} /></Button>
-      </Tip>
-      <span className="w-10 pr-1.5 text-right text-xs tabular-nums text-muted-foreground" aria-live="off">{Math.round(zoom * 100)}%</span>
+      {tip(<>Show the whole project <Kbd>⇧1</Kbd></>, <Button variant="ghost" size="icon" className={btn} onClick={onFit} aria-label="Zoom to fit the whole project"><ArrowsOut /></Button>)}
+      {tip(<>Zoom to the view in the center <Kbd>⇧2</Kbd></>, <Button variant="ghost" size="icon" className={btn} onClick={onCenter} aria-label="Zoom in to the view in the center"><Crosshair /></Button>)}
+      <span className="pt-1 pb-0.5 font-mono text-[10.5px] tabular-nums text-muted-foreground" aria-live="off">{Math.round(zoom * 100)}%</span>
     </div>
   );
 }

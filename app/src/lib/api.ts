@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import type { Manifest, CanvasState, GitStatus, ShipAction, ShipResult, FrameStatus, Agent, EditEvent, SnapshotIndex, ChatState, CanvasPrompt } from "./types";
+import type { Manifest, CanvasState, GitStatus, ShipAction, ShipResult, FrameStatus, Agent, EditEvent, SnapshotIndex, ChatState, CanvasPrompt, ChangelogEntry } from "./types";
 
 async function post<T = unknown>(url: string, body: unknown): Promise<T> {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -18,6 +18,7 @@ export const api = {
   chooseConcept: (id: string, index: number, comment: string) => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/concepts/choose", { id, index, comment }),
   conceptsAgain: (id: string, comment: string) => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/concepts/again", { id, comment }),
   stopListening: (conn: string) => post("/api/listen/stop", { conn }),
+  clearChangelog: () => post("/api/changelog/clear", {}),
   cancelPrompt: (id: string) => post("/api/prompt/cancel", { id }),
   clearPrompts: () => post("/api/prompt/clear", {}),
   permission: (request_id: string, behavior: "allow" | "deny") => post("/api/permission", { request_id, behavior }),
@@ -33,6 +34,7 @@ export function useCanvasData() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [snapshots, setSnapshots] = useState<SnapshotIndex>({});
   const [chat, setChat] = useState<ChatState>({ conns: [], prompts: [], permissions: [] });
+  const [changelog, setChangelog] = useState<ChangelogEntry[]>([]);
   // Latest agent edit per view ("*" = a global file such as a layout or global CSS)
   const [edits, setEdits] = useState<Record<string, number>>({});
 
@@ -50,6 +52,7 @@ export function useCanvasData() {
       es.addEventListener("activity", (e) => setAgents(JSON.parse((e as MessageEvent).data)));
       es.addEventListener("snapshots", (e) => setSnapshots(JSON.parse((e as MessageEvent).data)));
       es.addEventListener("chat", (e) => setChat(JSON.parse((e as MessageEvent).data)));
+      es.addEventListener("changelog", (e) => setChangelog(JSON.parse((e as MessageEvent).data)));
       es.addEventListener("edited", (e) => {
         const ev: EditEvent = JSON.parse((e as MessageEvent).data);
         setEdits((prev) => {
@@ -65,7 +68,7 @@ export function useCanvasData() {
   }, []);
 
   const refreshGit = useCallback(async () => setGit(await (await fetch("/api/git/status")).json()), []);
-  return { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots, chat };
+  return { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots, chat, changelog };
 }
 
 /** Checks whether the project's dev server answers. */
