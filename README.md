@@ -1,4 +1,4 @@
-# Project Canvas
+# Loupe
 
 A Claude Code plugin that lays out every page or screen of your project on a live design canvas, next to your terminal.
 
@@ -22,15 +22,15 @@ Built with shadcn/ui (Radix), Phosphor icons, React Flow and Tailwind v4. The se
 You need Claude Code and Node 20+. Run this in a terminal, or ask Claude to run it in a Code tab session in the desktop app:
 
 ```bash
-claude plugin marketplace add ellioteeriksson/project-canvas && claude plugin install project-canvas@project-canvas
+claude plugin marketplace add ellioteeriksson/loupe && claude plugin install loupe@loupe
 ```
 
-Start a new session, open a project and type `/canvas`. [INSTALL.md](INSTALL.md) has the details and troubleshooting.
+Start a new session, open a project and type `/loupe`. (Loupe used to be called Project Canvas: if you have that installed, remove it with `claude plugin uninstall project-canvas@project-canvas && claude plugin marketplace remove project-canvas`.) [INSTALL.md](INSTALL.md) has the details and troubleshooting.
 
 **Updates:**
 
 ```bash
-claude plugin marketplace update project-canvas && claude plugin update project-canvas@project-canvas
+claude plugin marketplace update loupe && claude plugin update loupe@loupe
 ```
 
 ## Use it on an existing project
@@ -39,7 +39,7 @@ claude plugin marketplace update project-canvas && claude plugin update project-
 cd your-project
 npm run dev            # in another terminal; frames load from the dev server
 claude
-> /canvas
+> /loupe
 ```
 
 The first time, Claude reads what was detected, checks whether the project is a website or a product, names the views and labels the main flow. The canvas opens at `http://localhost:4777`.
@@ -62,16 +62,16 @@ The first time, Claude reads what was detected, checks whether the project is a 
 
 ### Commands
 
-- `/canvas`: open the canvas, or reopen it if it's already running
-- `/canvas-listen`: let this chat take prompts from the canvas prompt bar right away (see below)
-- `/canvas-stop`: stop the server
-- `/canvas-preview`: add a dev-only `/__canvas` route so the Design system tab shows live component previews
+- `/loupe`: open the canvas, or reopen it if it's already running
+- `/loupe-listen`: let this chat take prompts from the canvas prompt bar right away (see below)
+- `/loupe-stop`: stop the server
+- `/loupe-preview`: add a dev-only `/__canvas` route so the Design system tab shows live component previews
 
 ### How scoping works
 
 | Hook | What it does |
 | --- | --- |
-| `UserPromptSubmit` | Adds a `<project-canvas-scope>` note to each prompt: the selected view, its route, files that belong only to it, files shared with other views, and its preview URL. |
+| `UserPromptSubmit` | Adds a `<loupe-scope>` note to each prompt: the selected view, its route, files that belong only to it, files shared with other views, and its preview URL. |
 | `PreToolUse` (Edit/Write) | Asks you before Claude edits a file outside the selection. Set `"scopeGuard": "off"` in `.canvas/config.json` to turn this off. |
 | `SessionStart` | Tells Claude where the plugin lives and whether a canvas is open. |
 | `Stop`, `UserPromptSubmit` | Hand over prompts sent from the canvas while Claude was busy or the chat was idle. |
@@ -85,7 +85,7 @@ Every Claude Code chat with the plugin connects itself to the project's canvas, 
 | Chat state | How the prompt gets there |
 | --- | --- |
 | **Live** (started with channels, see below) | Straight into the chat, even when it's idle. Permission prompts also show up in the canvas, with Allow and Deny. |
-| **Listening** (starts with `/canvas`, or `/canvas-listen`) | Claude waits for canvas prompts and picks them up right away. Works in the desktop app. Interrupt Claude to type in the chat; it goes back to listening when it's done. Say "stop listening", or use the chat menu in the prompt bar, to end it. |
+| **Listening** (starts with `/loupe`, or `/loupe-listen`) | Claude waits for canvas prompts and picks them up right away. Works in the desktop app. Interrupt Claude to type in the chat; it goes back to listening when it's done. Say "stop listening", or use the chat menu in the prompt bar, to end it. |
 | **Working** | Claude takes it as soon as it finishes what it's doing. |
 | **Idle** | It rides along with the next message you type in the chat. |
 
@@ -94,10 +94,10 @@ Claude answers in the canvas with a short summary of what it changed, and the pr
 **Live mode** uses Claude Code [channels](https://code.claude.com/docs/en/channels), a research preview that needs Claude Code 2.1.80+ and a claude.ai or Console login (Team and Enterprise admins must turn channels on). Custom channels aren't on Anthropic's allowlist yet, so start the terminal session with the development flag:
 
 ```bash
-claude --dangerously-load-development-channels plugin:project-canvas@project-canvas
+claude --dangerously-load-development-channels plugin:loupe@loupe
 ```
 
-Claude Code asks you to confirm once at startup. In the desktop app, use `/canvas-listen` instead.
+Claude Code asks you to confirm once at startup. In the desktop app, use `/loupe-listen` instead.
 
 ## Supported projects
 

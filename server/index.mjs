@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Project Canvas server — zero dependencies.
+ * Loupe server — zero dependencies.
  * Usage: node server/index.mjs --project <path> [--port 4777] [--open]
  */
 import http from "node:http";
@@ -69,10 +69,10 @@ function rescan(reason = "") {
       writeManifest(ROOT, m);
       broadcast("manifest", m);
       refreshSelection();
-      if (reason) console.log(`[canvas] rescanned (${reason}) · ${m.views.length} views`);
+      if (reason) console.log(`[loupe] rescanned (${reason}) · ${m.views.length} views`);
     }
   } catch (e) {
-    console.error("[canvas] scan failed:", e);
+    console.error("[loupe] scan failed:", e);
   }
 }
 
@@ -211,7 +211,7 @@ function startWatcher() {
   try {
     fs.watch(ROOT, { recursive: true }, onChange);
   } catch (e) {
-    console.warn("[canvas] recursive watch unavailable, polling every 3s", e.message);
+    console.warn("[loupe] recursive watch unavailable, polling every 3s", e.message);
     setInterval(() => rescan(), 3000);
   }
 }
@@ -403,7 +403,7 @@ function recordActivity(ev) {
   hub.activity(ev);
   if (ev.phase === "hello") return;
   if (ev.session && !ev.agent) {
-    if (ev.prompt && !/^\/canvas/.test(ev.prompt)) changelog.start(ev.session, { source: "chat", prompt: ev.prompt });
+    if (ev.prompt && !/^\/(loupe|canvas)/.test(ev.prompt)) changelog.start(ev.session, { source: "chat", prompt: ev.prompt });
     if (ev.phase === "done") { changelog.close(ev.session); hub.connKeys(ev.session).forEach((k) => changelog.close(k)); }
   }
   if (ev.phase === "edited" && ev.session) changelog.edited([ev.session, ...hub.connKeys(ev.session)], ev.file);
@@ -467,19 +467,19 @@ function freePort(start) {
 }
 
 async function main() {
-  if (!fs.existsSync(ROOT)) { console.error(`[canvas] project not found: ${ROOT}`); process.exit(1); }
+  if (!fs.existsSync(ROOT)) { console.error(`[loupe] project not found: ${ROOT}`); process.exit(1); }
   const prev = readState();
   if (prev.pid && prev.pid !== process.pid && pidAlive(prev.pid) && prev.url) {
     // A live pid isn't enough (pids get reused): ask the server itself
     const running = await fetch(`${prev.url}/api/state`, { signal: AbortSignal.timeout(1200) })
       .then((r) => r.json()).then((st) => (st.root === ROOT ? st : null)).catch(() => null);
     if (running && running.version === VERSION) {
-      console.log(`[canvas] already running for this project → ${prev.url}`);
+      console.log(`[loupe] already running for this project → ${prev.url}`);
       process.exit(0);
     }
     if (running) {
       // An older version is still serving this project: replace it so updates take effect
-      console.log(`[canvas] replacing canvas server ${running.version || "0.1.x"} (pid ${prev.pid}) with ${VERSION}`);
+      console.log(`[loupe] replacing canvas server ${running.version || "0.1.x"} (pid ${prev.pid}) with ${VERSION}`);
       try { process.kill(prev.pid, "SIGTERM"); } catch {}
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 100));
@@ -489,7 +489,7 @@ async function main() {
     }
   }
   if (!fs.existsSync(path.join(DIST, "index.html"))) {
-    console.error("[canvas] UI build missing. Run: npm --prefix \"" + path.resolve(HERE, "..", "app") + "\" install && npm --prefix \"" + path.resolve(HERE, "..", "app") + "\" run build");
+    console.error("[loupe] UI build missing. Run: npm --prefix \"" + path.resolve(HERE, "..", "app") + "\" install && npm --prefix \"" + path.resolve(HERE, "..", "app") + "\" run build");
     process.exit(1);
   }
   const port = await freePort(Number(args.port) || prev.port || 4777);
@@ -527,8 +527,8 @@ async function main() {
   server.listen(port, "127.0.0.1", () => {
     const url = `http://localhost:${port}`;
     writeState({ pid: process.pid, port, url, root: ROOT, version: VERSION, selection: prev.selection ? selectionRecord(prev.selection) : null });
-    console.log(`[canvas] v${VERSION} · ${manifest.project.name} (${manifest.project.framework}, ${manifest.mode}) · ${manifest.views.length} views`);
-    console.log(`[canvas] open ${url}`);
+    console.log(`[loupe] v${VERSION} · ${manifest.project.name} (${manifest.project.framework}, ${manifest.mode}) · ${manifest.views.length} views`);
+    console.log(`[loupe] open ${url}`);
     if (args.open) {
       const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
       const a = process.platform === "win32" ? ["/c", "start", url] : [url];

@@ -1,5 +1,5 @@
 ---
-description: Stop the Project Canvas server for this project
+description: Stop Loupe server for this project
 allowed-tools: Bash, Read
 ---
 

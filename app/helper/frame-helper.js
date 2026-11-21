@@ -1,4 +1,4 @@
-/* Project Canvas frame helper. Injected into pages shown on the canvas (via the local proxy).
+/* Loupe frame helper. Injected into pages shown on the canvas (via the local proxy).
  * - Reports the page's full content height to the canvas (for "Full page" frames)
  * - Freezes vh/svh/dvh/lvh units at the normal viewport height before the frame is stretched,
  *   so "100vh" heroes keep their real size instead of growing with the frame.

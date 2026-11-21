@@ -24,8 +24,8 @@ if ((sel.kind === "view" || sel.kind === "section" || sel.kind === "elements") &
 
 const shared = (sel.sharedFiles || []).includes(rel);
 const reason = shared
-  ? `Project Canvas: "${rel}" is shared with other views, but only "${sel.name}" is selected. Editing it changes those views too.`
-  : `Project Canvas: "${rel}" is outside the selected ${sel.kind} "${sel.name}".`;
+  ? `Loupe: "${rel}" is shared with other views, but only "${sel.name}" is selected. Editing it changes those views too.`
+  : `Loupe: "${rel}" is outside the selected ${sel.kind} "${sel.name}".`;
 
 out({
   hookSpecificOutput: {

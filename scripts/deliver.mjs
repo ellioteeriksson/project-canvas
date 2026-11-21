@@ -24,4 +24,4 @@ if (!claim?.text) process.exit(0);
 
 if (event === "Stop") out({ decision: "block", reason: claim.text });
 else if (claim.resume) process.exit(0);
-else out({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: `While you were busy, the user also sent this from the Project Canvas. Handle it too:\n${claim.text}` } });
+else out({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: `While you were busy, the user also sent this from Loupe. Handle it too:\n${claim.text}` } });

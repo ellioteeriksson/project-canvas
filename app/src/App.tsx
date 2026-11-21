@@ -31,7 +31,7 @@ export default function App() {
   const selection = state.selection ?? null;
   const selectedId = selection?.id ?? null;
 
-  useEffect(() => { if (manifest) document.title = `${manifest.project.name} · Project Canvas`; }, [manifest?.project.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (manifest) document.title = `${manifest.project.name} · Loupe`; }, [manifest?.project.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const select = useCallback(
     (id: string | null, extra?: Record<string, unknown>) => {

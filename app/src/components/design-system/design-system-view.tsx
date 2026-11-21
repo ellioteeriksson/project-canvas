@@ -168,7 +168,7 @@ function Components({ manifest, group, selectedId, onSelect, onOpenView }: Omit<
         <h1 className="text-xl font-semibold tracking-[-0.01em]">{title}</h1>
         <p className="mt-1 max-w-[64ch] text-muted-foreground">
           Select one to scope your next prompt in Claude Code to that component only.
-          {!manifest.previewRoute && <> Run <span className="font-mono text-[12px] text-foreground">/canvas-preview</span> in Claude Code to get live previews here.</>}
+          {!manifest.previewRoute && <> Run <span className="font-mono text-[12px] text-foreground">/loupe-preview</span> in Claude Code to get live previews here.</>}
         </p>
       </header>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">

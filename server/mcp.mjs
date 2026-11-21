@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Project Canvas MCP server: one runs inside every Claude Code chat that has the plugin.
+ * Loupe MCP server: one runs inside every Claude Code chat that has the plugin.
  * Zero dependencies; speaks MCP (newline-delimited JSON-RPC) over stdio.
  *
  * It connects the chat to the project's canvas, so prompts typed in the canvas reach this chat:
  * - as a channel event when Claude Code runs with channels on (pushed straight into the chat)
- * - as the result of canvas_wait when Claude is listening (/canvas-listen)
+ * - as the result of canvas_wait when Claude is listening (/loupe-listen)
  * and Claude answers in the canvas with canvas_reply. With channels on it also relays permission
  * prompts to the canvas, so you can allow or deny tool use there.
  */
@@ -24,10 +24,10 @@ const CONN = crypto.randomBytes(5).toString("hex");
 const CPID = claudePid();
 const CMDLINE = commandLine(CPID);
 // Channels only deliver when this plugin was named in --channels (or the development flag)
-const LIVE = process.env.PROJECT_CANVAS_LIVE === "1" || (/--(dangerously-load-development-)?channels\b/.test(CMDLINE) && /project-canvas/.test(CMDLINE));
+const LIVE = process.env.PROJECT_CANVAS_LIVE === "1" || (/--(dangerously-load-development-)?channels\b/.test(CMDLINE) && /\b(loupe|project-canvas)@/.test(CMDLINE));
 const WAIT_MS = Number(process.env.PROJECT_CANVAS_WAIT_MS) || 10 * 60_000;
 
-const log = (...a) => process.stderr.write(`[project-canvas mcp] ${a.join(" ")}\n`);
+const log = (...a) => process.stderr.write(`[loupe mcp] ${a.join(" ")}\n`);
 const write = (msg) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...msg }) + "\n");
 const notify = (method, params) => write({ method, params });
 
@@ -93,7 +93,7 @@ async function connectLoop() {
     if (c?.state?.url) {
       try { await streamOnce(c); } catch (e) { if (canvasUrl) log("disconnected:", e.message); }
       canvasUrl = null;
-      if (wait) finishWait(textResult("The Project Canvas closed. Stop listening and tell the user."));
+      if (wait) finishWait(textResult("Loupe closed. Stop listening and tell the user."));
     }
     await new Promise((r) => setTimeout(r, c ? 2000 : 4000));
   }
@@ -104,13 +104,13 @@ const TOOLS = [
   {
     name: "canvas_wait",
     description:
-      "Listen for the next prompt the user sends from the Project Canvas. Only use it after the user asked you to listen to the canvas (/canvas-listen) or a canvas_wait result told you to call it again. Blocks until a prompt arrives or about 10 minutes pass. When a prompt arrives, do it like any user message, call canvas_reply, then call canvas_wait again.",
+      "Listen for the next prompt the user sends from Loupe. Only use it after the user asked you to listen to the canvas (/loupe-listen) or a canvas_wait result told you to call it again. Blocks until a prompt arrives or about 10 minutes pass. When a prompt arrives, do it like any user message, call canvas_reply, then call canvas_wait again.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "canvas_concepts",
     description:
-      "Propose visual concepts for a design request from the Project Canvas, instead of editing files. The canvas previews each concept on the live page and the user picks one; you then get a follow-up prompt to build it. Follow the instructions in the canvas prompt about selectors and CSS.",
+      "Propose visual concepts for a design request from Loupe, instead of editing files. The canvas previews each concept on the live page and the user picks one; you then get a follow-up prompt to build it. Follow the instructions in the canvas prompt about selectors and CSS.",
     inputSchema: {
       type: "object",
       properties: {
@@ -149,12 +149,12 @@ const TOOLS = [
   },
   {
     name: "canvas_stop_listening",
-    description: "Stop listening to the Project Canvas, when the user asks you to. Prompts from the canvas then wait until the user writes in this chat.",
+    description: "Stop listening to Loupe, when the user asks you to. Prompts from the canvas then wait until the user writes in this chat.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "canvas_reply",
-    description: "Answer a prompt the user sent from the Project Canvas. The user reads this in the canvas, not in this chat, so summarise what you did in 1–3 sentences, in the language of the prompt.",
+    description: "Answer a prompt the user sent from Loupe. The user reads this in the canvas, not in this chat, so summarise what you did in 1–3 sentences, in the language of the prompt.",
     inputSchema: {
       type: "object",
       properties: {
@@ -181,12 +181,12 @@ function finishWait(result) {
 
 async function callTool(reqId, name, args, meta) {
   if (name === "canvas_reply") {
-    if (!canvasUrl) return write({ id: reqId, result: textResult("The Project Canvas isn't running, so the reply couldn't be shown there. Tell the user in this chat instead.", true) });
+    if (!canvasUrl) return write({ id: reqId, result: textResult("Loupe isn't running, so the reply couldn't be shown there. Tell the user in this chat instead.", true) });
     const r = await post("/api/channel/reply", { id: String(args?.prompt_id || ""), text: String(args?.text || "") });
     return write({ id: reqId, result: r.ok ? textResult("Shown in the canvas.") : textResult(r.error || "The canvas didn't accept the reply.", true) });
   }
   if (name === "canvas_concepts") {
-    if (!canvasUrl) return write({ id: reqId, result: textResult("The Project Canvas isn't running, so the concepts can't be shown. Tell the user to start it with /canvas.", true) });
+    if (!canvasUrl) return write({ id: reqId, result: textResult("Loupe isn't running, so the concepts can't be shown. Tell the user to start it with /loupe.", true) });
     const r = await post("/api/channel/concepts", { id: String(args?.prompt_id || ""), concepts: args?.concepts });
     return write({ id: reqId, result: r.ok ? textResult("The concepts are in the canvas. Don't build anything yet: the user picks one there, and you'll get a follow-up prompt.") : textResult(r.error || "The canvas didn't accept the concepts.", true) });
   }
@@ -196,7 +196,7 @@ async function callTool(reqId, name, args, meta) {
   }
   if (name === "canvas_wait") {
     for (let i = 0; i < 10 && !canvasUrl; i++) await new Promise((r) => setTimeout(r, 500));
-    if (!canvasUrl) return write({ id: reqId, result: textResult("The Project Canvas isn't running for this project, so there is nothing to listen to. Tell the user to start it with /canvas.", true) });
+    if (!canvasUrl) return write({ id: reqId, result: textResult("Loupe isn't running for this project, so there is nothing to listen to. Tell the user to start it with /loupe.", true) });
     finishWait(textResult("Superseded by a newer canvas_wait call."));
     const r = await post("/api/channel/waiting", { waiting: true });
     if (r.prompt) return write({ id: reqId, result: listenResult(r.prompt.text) });
@@ -209,7 +209,7 @@ async function callTool(reqId, name, args, meta) {
         finishWait(textResult("No prompt from the canvas in the last 10 minutes. Call canvas_wait again to keep listening, unless the user asked you to stop."));
       }, WAIT_MS),
       // Keep the call alive in clients that time out quiet requests
-      progress: token !== undefined ? setInterval(() => notify("notifications/progress", { progressToken: token, progress: ++n, message: "Listening to the Project Canvas" }), 20_000) : null,
+      progress: token !== undefined ? setInterval(() => notify("notifications/progress", { progressToken: token, progress: ++n, message: "Listening to Loupe" }), 20_000) : null,
     };
     return;
   }
@@ -218,11 +218,11 @@ async function callTool(reqId, name, args, meta) {
 
 /* ---------------- JSON-RPC ---------------- */
 const INSTRUCTIONS = [
-  "Project Canvas shows this project's pages on a visual canvas, and the user can send prompts to this chat from it.",
-  'Canvas prompts arrive as <channel source="…" prompt_id="…"> events, or as the result of canvas_wait when you are listening. Treat them exactly like a message the user typed here, and follow the <project-canvas-scope> block inside: it says which page, section or elements the prompt is about.',
+  "Loupe shows this project's pages on a visual canvas, and the user can send prompts to this chat from it.",
+  'Canvas prompts arrive as <channel source="…" prompt_id="…"> events, or as the result of canvas_wait when you are listening. Treat them exactly like a message the user typed here, and follow the <loupe-scope> block inside: it says which page, section or elements the prompt is about.',
   "When you have finished a canvas prompt, call canvas_reply with its prompt_id and a short summary of what you changed, in the language of the prompt. The user reads it in the canvas.",
   "Some canvas prompts ask for design concepts: then call canvas_concepts instead of editing files, and build only the concept the user picks.",
-  "Only call canvas_wait when the user asked you to listen to the canvas (/canvas starts listening), or a canvas_wait result or a hook told you to call it again. If the user asks you to stop listening, call canvas_stop_listening.",
+  "Only call canvas_wait when the user asked you to listen to the canvas (/loupe starts listening), or a canvas_wait result or a hook told you to call it again. If the user asks you to stop listening, call canvas_stop_listening.",
 ].join("\n");
 
 async function handle(msg) {
@@ -234,7 +234,7 @@ async function handle(msg) {
       result: {
         protocolVersion: asked < "2026-07-28" ? asked : "2025-06-18",
         capabilities: { experimental: { "claude/channel": {}, "claude/channel/permission": {} }, tools: {} },
-        serverInfo: { name: "project-canvas", version: VERSION },
+        serverInfo: { name: "loupe", version: VERSION },
         instructions: INSTRUCTIONS,
       },
     });

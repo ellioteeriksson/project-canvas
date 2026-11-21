@@ -9,15 +9,15 @@ import { readStdin, activeCanvas, out } from "./lib.mjs";
 const input = await readStdin();
 const root = process.env.CLAUDE_PLUGIN_ROOT || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 try {
-  const dir = path.join(os.homedir(), ".claude", "project-canvas");
+  const dir = path.join(os.homedir(), ".claude", "loupe");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "plugin-root"), root);
 } catch {}
 
 const c = activeCanvas(input.cwd);
-const lines = [`Project Canvas plugin root: ${root} (start a canvas with: node "${root}/server/index.mjs" --project "<project dir>" --open)`];
+const lines = [`Loupe plugin root: ${root} (start a canvas with: node "${root}/server/index.mjs" --project "<project dir>" --open)`];
 if (c) {
   const sel = c.state.selection;
-  lines.push(`Project Canvas is open for ${c.root} at ${c.state.url}.${sel ? ` Selected: ${sel.kind} "${sel.name}".` : " Nothing is selected."}`);
+  lines.push(`Loupe is open for ${c.root} at ${c.state.url}.${sel ? ` Selected: ${sel.kind} "${sel.name}".` : " Nothing is selected."}`);
 }
 out({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: lines.join("\n") } });

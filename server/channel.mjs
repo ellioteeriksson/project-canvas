@@ -5,7 +5,7 @@
 // which chats are open in the project. A prompt sent from the canvas reaches the chosen chat by the
 // first route that works:
 //   live       the session runs with channels on: pushed into the chat straight away
-//   listening  Claude is waiting in canvas_wait (/canvas-listen): handed over as the tool result
+//   listening  Claude is waiting in canvas_wait (/loupe-listen): handed over as the tool result
 //   stop       Claude is busy: the Stop hook hands it over when the current turn ends
 //   prompt     the chat is idle: it rides along with the next message you type there
 import fs from "node:fs";
@@ -192,7 +192,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     if (q) return deliver(q, via === "stop" ? "stop" : "prompt");
     // The chat was listening before you used it: go back to listening when the turn ends
     if (via === "stop" && c.listen && !c.waiting && !c.live && !stopHookActive) {
-      return { resume: true, text: "Go back to listening to the Project Canvas: call canvas_wait now (listening was started by /canvas). If the user asked you to stop listening, call canvas_stop_listening instead." };
+      return { resume: true, text: "Go back to listening to Loupe: call canvas_wait now (listening was started by /loupe). If the user asked you to stop listening, call canvas_stop_listening instead." };
     }
     return {};
   }
@@ -222,7 +222,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
       : info?.selectors?.length ? `the selected element${info.selectors.length > 1 ? `s ("@element:1" … "@element:${info.selectors.length}", "@scope" is the first)` : ` (selector "@scope")`}`
       : null;
     return [
-      `This is a design request from the Project Canvas. Don't edit any project files yet: propose 4 visual concepts first.`,
+      `This is a design request from Loupe. Don't edit any project files yet: propose 4 visual concepts first.`,
       `1. Read the code behind the scope above, so the concepts fit the existing page and design system.`,
       `2. Call the canvas_concepts tool once, with prompt_id "${id}" and exactly 4 concepts that differ clearly from each other (layout, hierarchy, type, color or imagery, not only copy). Give each a short title and a one-sentence summary.`,
       `   Each concept is previewed by changing the live page ${info?.url ? `${info.url} ` : ""}in the browser, at ${info?.device === "mobile" ? "390" : "1440"}px wide:`,
@@ -288,7 +288,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     const body = [
       `Build concept ${index + 1} (“${c.title}”) in the real code.${note ? `\nThe user's comment on it: ${note}` : ""}`,
       "",
-      `The user picked it in the Project Canvas from your concepts for prompt ${p.id} (“${p.text}”). It was previewed with the markup and CSS below. Build the same design with the project's own components, styling approach and tokens, rather than pasting the preview HTML. Keep to the scope below.`,
+      `The user picked it in Loupe from your concepts for prompt ${p.id} (“${p.text}”). It was previewed with the markup and CSS below. Build the same design with the project's own components, styling approach and tokens, rather than pasting the preview HTML. Keep to the scope below.`,
       "",
       code,
     ].join("\n");

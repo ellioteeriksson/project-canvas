@@ -135,7 +135,7 @@ export async function ship(cwd, { action, message, branch: branchName }) {
         steps.push({ cmd: "gh pr view", ok: true, out: `PR already open: ${prUrl}` });
       } else {
         const [title, ...rest] = (message || `Update from ${branch}`).trim().split("\n");
-        const body = `${rest.join("\n").trim()}\n\n_Opened from Project Canvas_`.trim();
+        const body = `${rest.join("\n").trim()}\n\n_Opened from Loupe_`.trim();
         const r = await step("gh", ["pr", "create", "--base", base, "--head", branch, "--title", title, "--body", body], { timeout: 120_000 });
         if (r.ok) prUrl = r.out.split("\n").pop();
         else return { ok: false, steps, error: "gh pr create failed" };

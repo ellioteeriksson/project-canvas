@@ -1,4 +1,4 @@
-// Shared helpers for Project Canvas hooks. Hooks must never crash or block Claude Code.
+// Shared helpers for Loupe hooks. Hooks must never crash or block Claude Code.
 import fs from "node:fs";
 import path from "node:path";
 

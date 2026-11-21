@@ -11,7 +11,7 @@ const STATUS: Record<ChatStatus, { word: string; hint: string }> = {
   live: { word: "Live", hint: "Goes straight into the chat." },
   listening: { word: "Listening", hint: "Claude picks it up right away." },
   busy: { word: "Working", hint: "Claude takes it when it finishes what it's doing." },
-  idle: { word: "Idle", hint: "Reaches the chat with your next message there. Run /canvas-listen in the chat to take prompts right away." },
+  idle: { word: "Idle", hint: "Reaches the chat with your next message there. Run /loupe-listen in the chat to take prompts right away." },
   offline: { word: "Closed", hint: "This chat closed." },
 };
 const RANK: Record<ChatStatus, number> = { live: 0, listening: 1, busy: 2, idle: 3, offline: 9 };
