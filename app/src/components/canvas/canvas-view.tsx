@@ -279,7 +279,7 @@ function CanvasToolbar({ manifest, onFit, onCenter }: { manifest: Manifest; onFi
   const { zoom } = useViewport();
   const sep = <span aria-hidden className="mx-0.5 h-4 w-px bg-border" />;
   return (
-    <div className="flex items-center gap-0.5 rounded-lg border bg-background/95 p-0.5 shadow-[0_2px_10px_-6px_rgba(0,0,0,.35)] backdrop-blur">
+    <div className="flex items-center gap-0.5 rounded-[11px] bg-background p-[3px] shadow-soft-md ring-1 ring-black/[0.05] dark:ring-white/10 [&_[role=group]]:bg-transparent">
       <ToggleGroup type="single" value={manifest.mode} onValueChange={(v) => v && api.config({ mode: v })} aria-label="Layout">
         <Tip label="Sitemap: pages as a tree by URL"><ToggleGroupItem value="sitemap" aria-label="Sitemap layout"><TreeStructure size={15} /></ToggleGroupItem></Tip>
         <Tip label="Flow: screens connected by their links"><ToggleGroupItem value="flow" aria-label="Flow layout"><FlowArrow size={15} /></ToggleGroupItem></Tip>

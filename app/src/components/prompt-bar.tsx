@@ -87,7 +87,7 @@ export function PromptBar({ chat, agents, selection, scopeName, onClearScope, on
       <div className="pointer-events-auto flex w-[600px] max-w-full flex-col gap-2">
         {chat.permissions.map((p) => <PermissionCard key={p.request_id} p={p} />)}
 
-        <div className="overflow-hidden rounded-xl border bg-background shadow-[0_8px_30px_-12px_rgb(0_0_0/0.35)]">
+        <div className="overflow-hidden rounded-[16px] bg-background shadow-soft-lg ring-1 ring-black/[0.06] dark:ring-white/10">
           {/* History */}
           {open && (
             <div ref={thread} className="max-h-[min(46vh,420px)] overflow-y-auto border-b" aria-label="Prompts sent from the canvas">
@@ -153,7 +153,7 @@ export function PromptBar({ chat, agents, selection, scopeName, onClearScope, on
               }}
               placeholder={placeholder}
               aria-label="Prompt for Claude Code"
-              className="max-h-[168px] min-h-[24px] w-full resize-none bg-transparent py-1 text-[14px] leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+              className="max-h-[168px] min-h-[24px] w-full resize-none bg-transparent py-1 text-[15px] leading-6 tracking-[-0.01em] outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
             />
             <div className="flex items-center gap-2">
               <ChatPicker conns={conns} current={current} onPick={setTarget} />
@@ -172,7 +172,7 @@ export function PromptBar({ chat, agents, selection, scopeName, onClearScope, on
                 <TooltipContent>{concepts ? "On: Claude sketches 4 concepts to pick from before changing the code" : "Off: Claude changes the code straight away"}</TooltipContent>
               </Tooltip>
               <Kbd className="hidden lg:inline-flex">⌘K</Kbd>
-              <Button type="submit" size="icon" className="size-8 shrink-0 rounded-lg" disabled={!current || !text.trim() || sending} aria-label="Send to Claude Code">
+              <Button type="submit" size="icon" className="size-8 shrink-0 rounded-full" disabled={!current || !text.trim() || sending} aria-label="Send to Claude Code">
                 <ArrowUp size={16} weight="bold" />
               </Button>
             </div>
@@ -314,7 +314,7 @@ function PermissionCard({ p }: { p: { request_id: string; tool_name: string; des
   const [busy, setBusy] = useState(false);
   const decide = async (b: "allow" | "deny") => { setBusy(true); await api.permission(p.request_id, b); };
   return (
-    <div role="alertdialog" aria-label={`Claude wants to use ${p.tool_name}`} className="rounded-xl border border-[var(--agent)]/50 bg-background p-3 shadow-[0_8px_30px_-12px_rgb(0_0_0/0.35)]">
+    <div role="alertdialog" aria-label={`Claude wants to use ${p.tool_name}`} className="rounded-[14px] bg-background p-3.5 shadow-soft-lg ring-1 ring-[var(--agent)]/45">
       <div className="flex items-start gap-2">
         <ShieldWarning size={16} className="mt-0.5 shrink-0 text-[var(--agent)]" />
         <div className="min-w-0 flex-1">

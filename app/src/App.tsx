@@ -4,7 +4,6 @@ import { useCanvasData, api } from "@/lib/api";
 import type { PickedElement } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { CanvasView, type CanvasHandle } from "@/components/canvas/canvas-view";
@@ -16,6 +15,7 @@ import { SettingsPopover } from "@/components/settings-popover";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AgentIndicator } from "@/components/agent-indicator";
 import { PromptBar } from "@/components/prompt-bar";
+import { BrandMark } from "@/components/brand-mark";
 import { ConceptDrawer } from "@/components/concept-drawer";
 
 type Tab = "canvas" | "sections" | "design";
@@ -74,7 +74,7 @@ export default function App() {
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full flex-col">
         {/* Top bar */}
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-2">
+        <header className="relative flex h-[52px] shrink-0 items-center gap-2 border-b bg-chrome px-2.5">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" onClick={() => setSidebar((s) => !s)} aria-label={sidebar ? "Hide views list" : "Show views list"} aria-pressed={sidebar}>
@@ -83,13 +83,18 @@ export default function App() {
             </TooltipTrigger>
             <TooltipContent>{sidebar ? "Hide" : "Show"} list</TooltipContent>
           </Tooltip>
-          <div className="flex min-w-0 items-center gap-2 pr-2">
-            {isProduct ? <Cube size={16} className="shrink-0" /> : <Globe size={16} className="shrink-0" />}
-            <h1 className="truncate text-[14px] font-semibold">{manifest.project.name}</h1>
-            <Badge variant="outline" className="hidden md:inline-flex">{manifest.project.framework} · {isProduct ? "product" : "website"}</Badge>
+          <div className="flex min-w-0 items-center gap-2.5 pr-2 pl-0.5">
+            <BrandMark />
+            <div className="min-w-0 leading-tight">
+              <h1 className="truncate text-[13px] font-semibold">{manifest.project.name}</h1>
+              <p className="hidden truncate text-[11px] text-muted-foreground md:block">
+                {isProduct ? <Cube size={10} className="mr-1 inline align-[-1px]" /> : <Globe size={10} className="mr-1 inline align-[-1px]" />}
+                {isProduct ? "Product" : "Website"}, {manifest.project.framework}
+              </p>
+            </div>
           </div>
 
-          <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="ml-2">
+          <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="absolute left-1/2 -translate-x-1/2 max-lg:static max-lg:ml-2 max-lg:translate-x-0">
             <TabsList>
               <TabsTrigger value="canvas"><ModeIcon size={14} /> Canvas</TabsTrigger>
               <TabsTrigger value="sections"><Rows size={14} /> Sections</TabsTrigger>
@@ -106,7 +111,7 @@ export default function App() {
         </header>
 
         <div className="flex min-h-0 flex-1">
-          <aside className={cn("shrink-0 overflow-hidden border-r bg-background transition-[width] duration-200", sidebar ? "w-[272px]" : "w-0 border-r-0")} aria-hidden={!sidebar}>
+          <aside className={cn("shrink-0 overflow-hidden border-r bg-chrome transition-[width] duration-200", sidebar ? "w-[272px]" : "w-0 border-r-0")} aria-hidden={!sidebar}>
             <div className="h-full w-[272px]">
               {tab !== "design" ? (
                 <ViewsSidebar

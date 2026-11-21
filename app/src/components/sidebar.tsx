@@ -36,12 +36,12 @@ export function ViewsSidebar({ manifest, selectedId, onPick, activeViews }: { ma
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-baseline justify-between px-3 pt-3 pb-2">
-        <h2 className="text-[13px] font-semibold">Views</h2>
+        <h2 className="text-[11px] font-semibold text-muted-foreground">Views</h2>
         <span className="text-xs tabular-nums text-muted-foreground">{manifest.views.length}</span>
       </div>
       <div className="relative px-3 pb-2">
         <MagnifyingGlass size={14} className="pointer-events-none absolute top-1/2 left-5.5 -translate-y-1/2 text-muted-foreground" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a view" aria-label="Find a view" className="h-7 pl-7" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a view" aria-label="Find a view" className="h-7 rounded-[7px] border-0 bg-segment pl-7 shadow-none focus-visible:bg-background" />
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <ul className="px-1.5 pb-3" role="tree" aria-label="Project views">
@@ -62,12 +62,11 @@ function Row({ item, depth, selectedId, onPick, active }: { item: TreeItem; dept
   const row = (
     <div
       className={cn(
-        "group/row relative flex h-7 items-center gap-1.5 rounded-md pr-2 text-[13px] hover:bg-accent",
-        selected && "bg-scope/15 font-medium hover:bg-scope/20",
+        "group/row relative flex h-7 items-center gap-1.5 rounded-[7px] pr-2 text-[13px] hover:bg-accent",
+        selected && "bg-scope/14 font-medium text-foreground hover:bg-scope/18 [&_.row-icon]:text-scope",
       )}
       style={{ paddingLeft: 6 + depth * 14 }}
     >
-      {selected && <span aria-hidden className="absolute top-1 bottom-1 left-0 w-[3px] rounded-full bg-scope" />}
       {item.children.length > 0 ? (
         <CollapsibleTrigger className="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring" aria-label={open ? `Collapse ${item.name}` : `Expand ${item.name}`}>
           <CaretRight size={11} weight="bold" className={cn("transition-transform", open && "rotate-90")} />
@@ -81,7 +80,7 @@ function Row({ item, depth, selectedId, onPick, active }: { item: TreeItem; dept
         onClick={() => onPick(item.id, item.group)}
         aria-current={selected ? "true" : undefined}
       >
-        <Icon size={14} className={cn("shrink-0", item.needsParam ? "text-[#b7791f]" : "text-muted-foreground")} weight={selected ? "fill" : "regular"} />
+        <Icon size={14} className={cn("row-icon shrink-0", item.needsParam ? "text-[#b7791f]" : "text-muted-foreground")} weight={selected ? "fill" : "regular"} />
         <EditableName value={item.name} onSave={(n) => api.config({ names: { [item.id]: n } })} />
         {active.has(item.id) && <span className="agent-dot size-1.5 shrink-0 rounded-full bg-[var(--agent)]" aria-label="Claude is working here" />}
       </button>
@@ -139,7 +138,6 @@ export function DesignSystemSidebar({ manifest, section, onSection, selectedId, 
                         onClick={() => onPick(c.id)}
                         className={cn("relative flex h-7 w-full items-center gap-2 rounded-md pr-2 pl-8 text-left text-[13px] outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring", selectedId === c.id && "bg-scope/15 font-medium")}
                       >
-                        {selectedId === c.id && <span aria-hidden className="absolute top-1 bottom-1 left-0 w-[3px] rounded-full bg-scope" />}
                         <span className="truncate">{c.name}</span>
                         <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">{c.usedBy.length || ""}</span>
                       </button>

@@ -119,7 +119,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id:
   return (
     <aside
       aria-label="Design concepts"
-      className="drawer-in absolute inset-y-0 right-0 z-30 flex w-[min(880px,100%)] flex-col border-l bg-background shadow-[-24px_0_60px_-40px_rgb(0_0_0/0.5)]"
+      className="drawer-in absolute inset-y-0 right-0 z-30 flex w-[min(880px,100%)] flex-col border-l bg-chrome shadow-[-24px_0_60px_-40px_rgb(0_0_0/0.5)]"
     >
       <header className="flex items-start gap-3 border-b px-6 pt-5 pb-4">
         <div className="min-w-0 flex-1">
@@ -144,7 +144,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id:
               )}
             </p>
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              {[0, 1, 2, 3].map((i) => <div key={i} className="aspect-[4/3] animate-pulse rounded-xl bg-muted" style={{ animationDelay: `${i * 120}ms` }} />)}
+              {[0, 1, 2, 3].map((i) => <div key={i} className="aspect-[4/3] animate-pulse rounded-[14px] bg-segment" style={{ animationDelay: `${i * 120}ms` }} />)}
             </div>
           </div>
         ) : (
@@ -153,7 +153,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id:
               const shot = shots.get(shotKey(p, i));
               const isChosen = chosen === i;
               return (
-                <li key={i} className={cn("flex flex-col overflow-hidden rounded-xl border bg-card transition-opacity", chosen !== undefined && !isChosen && "opacity-45", isChosen && "border-scope shadow-[0_0_0_1px_var(--scope)]")}>
+                <li key={i} className={cn("flex flex-col overflow-hidden rounded-[14px] bg-card shadow-soft-sm ring-1 ring-black/[0.06] transition-opacity dark:bg-secondary dark:ring-white/10", chosen !== undefined && !isChosen && "opacity-45", isChosen && "ring-2 ring-scope dark:ring-scope")}>
                   <button
                     type="button"
                     onClick={() => shot?.dataUrl && setZoom(i)}
@@ -186,7 +186,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id:
                           onChange={(e) => setComments((m) => ({ ...m, [i]: e.target.value }))}
                           placeholder="Comment (optional), like “tighter spacing”"
                           aria-label={`Comment on concept ${i + 1}`}
-                          className="mt-auto w-full resize-none rounded-lg border bg-transparent px-3 py-2 text-[13px] leading-5 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
+                          className="mt-auto w-full resize-none rounded-[9px] border-0 bg-segment px-3 py-2 text-[13px] leading-5 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
                         />
                         <Button size="sm" className="self-start" disabled={busy || !conn} onClick={() => choose(i)}>
                           <Check size={14} weight="bold" /> Use this
@@ -212,7 +212,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id:
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); again(); } }}
             placeholder="None of these? Say what to change and get 4 new ones"
             aria-label="Feedback for a new round of concepts"
-            className="min-h-9 flex-1 resize-none rounded-lg border bg-transparent px-3 py-2 text-[13px] leading-5 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
+            className="min-h-9 flex-1 resize-none rounded-[9px] border-0 bg-segment px-3 py-2 text-[13px] leading-5 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
           />
           <Button variant="outline" disabled={busy || !conn} onClick={again}><ArrowsClockwise size={14} /> 4 new concepts</Button>
         </footer>

@@ -215,8 +215,8 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
 
       <div
         className={cn(
-          "frame-card relative overflow-hidden rounded-[6px] bg-background ring-1 ring-foreground/12 transition-shadow hover:ring-foreground/30",
-          "shadow-[0_1px_2px_rgba(28,34,48,.08),0_6px_20px_-8px_rgba(28,34,48,.18)]",
+          "frame-card relative overflow-hidden rounded-[8px] bg-background ring-1 ring-black/[0.06] transition-shadow duration-200 hover:ring-black/15 dark:ring-white/10 dark:hover:ring-white/25",
+          "shadow-soft-md",
           selected && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--scope)]",
           inside && "ring-0 shadow-[0_0_0_calc(1px*var(--title-scale,1))_var(--scope)]",
           interactive && !picking && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--live)]",

@@ -3,69 +3,81 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Neutral design-tool theme. Blue = selection / scope (what Claude will edit), green = live page,
-   Claude orange = an agent at work. */
+/* Calm, Apple-like neutrals. One accent does the talking: blue = selection / scope (what Claude
+   will edit) and primary actions. Green = live page. Claude orange = an agent at work. */
 :root {
-  --radius: 0.5rem;
-  --background: #ffffff;
-  --foreground: #1e1e1e;
+  --radius: 0.625rem;
+  --chrome: #f5f5f7;          /* toolbar and sidebar */
+  --brand-tile: #1d1d1f;
+  --background: #ffffff;      /* panels, popovers, frames */
+  --foreground: #1d1d1f;
   --card: #ffffff;
-  --card-foreground: #1e1e1e;
+  --card-foreground: #1d1d1f;
   --popover: #ffffff;
-  --popover-foreground: #1e1e1e;
-  --primary: #1e1e1e;
+  --popover-foreground: #1d1d1f;
+  --primary: #0071e3;
   --primary-foreground: #ffffff;
-  --secondary: #f0f0f0;
-  --secondary-foreground: #1e1e1e;
-  --muted: #f0f0f0;
-  --muted-foreground: #6b6b6b;
-  --accent: #ececec;
-  --accent-foreground: #1e1e1e;
-  --destructive: #d93b3b;
-  --border: #e3e3e3;
-  --input: #d4d4d4;
-  --ring: #0d99ff;
-  --paper: #f0f0f0;
-  --paper-dot: #cdcdcd;
-  --wire: #8f8f8f;
-  --scope: #0d99ff;
+  --secondary: #e8e8ed;
+  --secondary-foreground: #1d1d1f;
+  --muted: #f0f0f2;
+  --muted-foreground: #6e6e73;
+  --accent: rgba(0, 0, 0, 0.05);
+  --accent-foreground: #1d1d1f;
+  --destructive: #d70015;
+  --border: rgba(0, 0, 0, 0.09);
+  --input: rgba(0, 0, 0, 0.14);
+  --ring: #0071e3;
+  --segment: rgba(118, 118, 128, 0.12);
+  --paper: #e9e9ec;
+  --paper-dot: rgba(0, 0, 0, 0.13);
+  --wire: #a1a1a6;
+  --scope: #0071e3;
   --scope-ink: #ffffff;
-  --live: #14ae5c;
-  --link: #0a7fd6;
-  --ok: #14ae5c;
+  --live: #1f9d55;
+  --link: #0066cc;
+  --ok: #1f9d55;
+  --shadow-sm: 0 0.5px 1px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 18px -6px rgba(0, 0, 0, 0.14);
+  --shadow-lg: 0 1px 2px rgba(0, 0, 0, 0.06), 0 18px 40px -12px rgba(0, 0, 0, 0.22);
 }
 .dark {
-  --background: #2c2c2c;
-  --foreground: #ededed;
-  --card: #2c2c2c;
-  --card-foreground: #ededed;
-  --popover: #333333;
-  --popover-foreground: #ededed;
-  --primary: #ededed;
-  --primary-foreground: #1e1e1e;
-  --secondary: #383838;
-  --secondary-foreground: #ededed;
-  --muted: #383838;
-  --muted-foreground: #a3a3a3;
-  --accent: #3d3d3d;
-  --accent-foreground: #ededed;
-  --destructive: #f2645f;
-  --border: #3d3d3d;
-  --input: #4a4a4a;
-  --ring: #3aa8ff;
-  --paper: #1e1e1e;
-  --paper-dot: #3a3a3a;
-  --wire: #6e6e6e;
-  --scope: #0d99ff;
+  --chrome: #262628;
+  --brand-tile: #48484a;
+  --background: #2c2c2e;
+  --foreground: #f5f5f7;
+  --card: #2c2c2e;
+  --card-foreground: #f5f5f7;
+  --popover: #333336;
+  --popover-foreground: #f5f5f7;
+  --primary: #0a84ff;
+  --primary-foreground: #ffffff;
+  --secondary: #3a3a3c;
+  --secondary-foreground: #f5f5f7;
+  --muted: #333336;
+  --muted-foreground: #98989d;
+  --accent: rgba(255, 255, 255, 0.07);
+  --accent-foreground: #f5f5f7;
+  --destructive: #ff6961;
+  --border: rgba(255, 255, 255, 0.09);
+  --input: rgba(255, 255, 255, 0.14);
+  --ring: #0a84ff;
+  --segment: rgba(118, 118, 128, 0.24);
+  --paper: #1c1c1e;
+  --paper-dot: rgba(255, 255, 255, 0.1);
+  --wire: #636366;
+  --scope: #0a84ff;
   --scope-ink: #ffffff;
-  --live: #3cc77f;
-  --link: #5cb8ff;
-  --ok: #3cc77f;
+  --live: #30d158;
+  --link: #4da3ff;
+  --ok: #30d158;
+  --shadow-sm: 0 0 0 0.5px rgba(255, 255, 255, 0.06), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 0 0 0.5px rgba(255, 255, 255, 0.07), 0 8px 22px -8px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 20px 44px -12px rgba(0, 0, 0, 0.7);
 }
 
 @theme inline {
-  --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   --radius-sm: calc(var(--radius) - 3px);
   --radius-md: calc(var(--radius) - 1px);
   --radius-lg: var(--radius);
@@ -89,6 +101,11 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-paper: var(--paper);
+  --color-chrome: var(--chrome);
+  --color-segment: var(--segment);
+  --shadow-soft-sm: var(--shadow-sm);
+  --shadow-soft-md: var(--shadow-md);
+  --shadow-soft-lg: var(--shadow-lg);
   --color-paper-dot: var(--paper-dot);
   --color-wire: var(--wire);
   --color-scope: var(--scope);
@@ -105,13 +122,16 @@
     @apply bg-background text-foreground antialiased;
     font-size: 13px;
     line-height: 1.45;
-    font-feature-settings: "ss02";
+    letter-spacing: -0.003em;
+    -webkit-font-smoothing: antialiased;
   }
-  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  h1, h2, h3 { letter-spacing: -0.012em; }
+  :focus-visible { outline: 2px solid color-mix(in oklab, var(--ring) 70%, transparent); outline-offset: 2px; }
+  ::selection { background: color-mix(in oklab, var(--scope) 28%, transparent); }
 }
 
 /* React Flow overrides */
-.react-flow { --xy-background-color: var(--paper); --xy-edge-stroke: var(--wire); --xy-edge-stroke-width: 1.5; --xy-attribution-background-color: transparent; }
+.react-flow { --xy-background-color: var(--paper); --xy-edge-stroke: var(--wire); --xy-edge-stroke-width: 1.25; --xy-attribution-background-color: transparent; }
 .react-flow__node { cursor: default; }
 .react-flow__node:focus-visible { outline: none; }
 .react-flow__node:focus-visible .frame-card { outline: 2px solid var(--ring); outline-offset: 3px; }
