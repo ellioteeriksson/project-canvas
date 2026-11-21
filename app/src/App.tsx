@@ -116,7 +116,7 @@ export default function App() {
   const isProduct = manifest.mode === "flow";
   // Room the floating project panel takes on the left of the canvas
   const insetLeft = sidebar ? 288 : 12;
-  const compactTabs = winW - insetLeft - insetRight < 1000;
+  const compactTabs = winW - insetLeft - insetRight < 1120;
   const selectionName = selection?.name ?? manifest.views.find((v) => v.id === selectedId)?.name ?? manifest.designSystem.components.find((c) => c.id === selectedId)?.name;
   const scopeName = selectionName ? (selection?.kind === "section" || selection?.kind === "elements" ? `${selectionName} on ${selection.viewName}` : selectionName) : null;
 

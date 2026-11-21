@@ -188,13 +188,25 @@ export function Buddy({ manifest, chat, base, canvas, tab, selectedViewId, parkL
     }
     return null;
   };
+  // Which page he's over is looked up once a frame at most, and only a change re-renders
+  const dragOver = useRef<{ over: string | null; at: V | null; raf: number }>({ over: null, at: null, raf: 0 });
   const onDrag = (p: V) => {
-    const over = viewAt(p);
-    if (over !== dragging?.over) onInspecting(over);
-    setDragging({ over });
-    setOpen(false);
+    const d = dragOver.current;
+    d.at = p;
+    if (d.raf) return;
+    d.raf = requestAnimationFrame(() => {
+      d.raf = 0;
+      const over = d.at ? viewAt(d.at) : null;
+      if (dragging && over === d.over) return;
+      d.over = over;
+      onInspecting(over);
+      setDragging({ over });
+      setOpen(false);
+    });
   };
   const onDrop = (p: V) => {
+    cancelAnimationFrame(dragOver.current.raf);
+    dragOver.current = { over: null, at: null, raf: 0 };
     const over = viewAt(p);
     setDragging(null);
     onInspecting(null);

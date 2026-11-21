@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowsClockwise, Browser, Copy, DotsThree, FlowArrow, FolderOpen, FolderSimplePlus, MagnifyingGlass, Stop, TreeStructure, X } from "@phosphor-icons/react";
-import { BrandMark } from "@/components/brand-mark";
+import { BrandMark, Wordmark } from "@/components/brand-mark";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -109,11 +109,7 @@ export function Home() {
         <div className="shell-drag fixed inset-x-0 top-0 z-10 h-3" />
         <aside className="island m-3 mr-0 flex w-[248px] shrink-0 flex-col overflow-hidden" aria-label="Loupe">
           <div className="shell-lights shell-drag flex h-[56px] shrink-0 items-center gap-2.5 px-3.5">
-            <BrandMark size={26} />
-            <div className="leading-tight">
-              <h1 className="text-[14px] font-semibold">Loupe</h1>
-              <p className="text-[11.5px] text-muted-foreground">Your projects</p>
-            </div>
+            <h1 className="flex items-center gap-2.5"><BrandMark size={26} /><Wordmark height={17} className="text-foreground" /></h1>
           </div>
           <nav className="flex flex-col gap-0.5 border-t p-2">
             {NAV.map((n) => (

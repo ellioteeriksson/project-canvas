@@ -21,7 +21,7 @@ export function CommentLayer({ viewId, viewName, pageH, scale, sections, interac
       {c.commenting && !interactive && (
         <div
           className="nodrag absolute inset-0 z-[4]"
-          style={{ cursor: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M3 21V12a9 9 0 1 1 9 9z' fill='%23ec4593' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E\") 3 21, crosshair" }}
+          style={{ cursor: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M3 21V12a9 9 0 1 1 9 9z' fill='%230071e3' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E\") 3 21, crosshair" }}
           onClick={(e) => {
             e.stopPropagation();
             const r = e.currentTarget.getBoundingClientRect();
