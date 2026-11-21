@@ -146,7 +146,7 @@ export function Buddy({ manifest, chat, base, canvas, tab, onShowView, onFix, on
           {view === "rules" ? (
             <RulesEditor manifest={manifest} chat={chat} onBack={() => setView("home")} />
           ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
               {/* What Lou says */}
               <div className="px-4 pt-4">
                 <p className="buddy-say text-[14px] leading-snug">

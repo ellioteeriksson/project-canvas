@@ -74,7 +74,7 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
       pos: { ...live.current.to }, goal: { ...live.current.to },
       move: null as null | { t: number; ant: number; dur: number; from: V; to: V; lift: number },
       sx: 1, sy: 1, vsx: 0, vsy: 0, lean: 0, vlean: 0, fx: 0, fy: 0, vfx: 0, vfy: 0, wob: 0, ph: 0, o: 0, dir: 0, sp: 0, air: 0,
-      chain: 0, vchain: 0, zoom: 0,
+      chain: 0, vchain: 0, zoom: 0, handsOn: 0, handsUntil: 0,
       look: { x: 0, y: 0 }, lookT: { x: 0, y: 0 }, nextLook: 0, blink: 1, nextBlink: 2, t: 0,
       wave: live.current.wave, waveUntil: 0,
       hands: [{ x: -46, y: 12, vx: 0, vy: 0, r: 0 }, { x: 46, y: 12, vx: 0, vy: 0, r: 0 }],
@@ -171,6 +171,9 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
           : inspecting ? { x: 35, y: -3, r: -20 } // a mitt at the monocle rim
           : { x: 46, y: 12 + bob(1), r: 0 },
       ];
+      // Hands only come out when he has something to do: waving, inspecting, flying (and landing)
+      if (S.move || waving || inspecting) S.handsUntil = S.t + 0.6;
+      S.handsOn = lerp(S.handsOn, S.t < S.handsUntil ? 1 : 0, 1 - Math.pow(reduced ? 0 : 0.0005, dt));
       const px = S.pos.x * u, py = S.pos.y * u;
       S.hands.forEach((h, i) => {
         const T = spots[i];
@@ -223,7 +226,10 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
       E.shadow?.setAttribute("opacity", String((document.documentElement.classList.contains("dark") ? 0.55 : 0.22) * (1 - S.air * 0.4)));
       E.shadow?.setAttribute("transform", `translate(0 ${S.air * (S.move?.lift ?? 0) * u})`);
       S.hands.forEach((h, i) => {
-        E[`h${i}`]?.setAttribute("transform", `translate(${(h.x - px).toFixed(2)} ${(h.y - py).toFixed(2)}) rotate(${h.r.toFixed(1)})`);
+        // tucked away: they shrink back into his sides
+        const k = S.handsOn, side = i ? 1 : -1;
+        const hx = lerp(side * 26, h.x - px, k), hy = lerp(8, h.y - py, k);
+        E[`h${i}`]?.setAttribute("transform", `translate(${hx.toFixed(2)} ${hy.toFixed(2)}) rotate(${h.r.toFixed(1)}) scale(${k.toFixed(3)})`);
       });
       const tr = `translate(${S.pos.x.toFixed(1)}px, ${S.pos.y.toFixed(1)}px)`;
       if (root.current) root.current.style.transform = tr;

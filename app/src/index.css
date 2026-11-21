@@ -189,8 +189,8 @@
 
 /* The view the helper buddy is inspecting */
 .frame-card.inspecting { box-shadow: 0 0 0 calc(2px * var(--title-scale, 1)) var(--buddy), 0 0 0 calc(8px * var(--title-scale, 1)) color-mix(in oklab, var(--buddy) 25%, transparent) !important; transition: box-shadow .3s; }
-:root { --buddy: #7c6cff; --buddy-2: #b49bff; }
-.dark { --buddy: #8f82ff; --buddy-2: #c2b2ff; }
+:root { --buddy: #E0458F; --buddy-2: #FF8CC4; }
+.dark { --buddy: #FF6FB0; --buddy-2: #FFA6D2; }
 
 /* ---------- Lou, the helper buddy (the figure animates itself in lou.tsx) ---------- */
 .buddy-panel { animation: buddy-pop 220ms cubic-bezier(.2, .9, .3, 1.2); transform-origin: 100% 100%; }
