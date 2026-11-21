@@ -65,7 +65,7 @@ export function PromptBar({ chat, agents, selection, scopeName, insetLeft = 12, 
     const el = input.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
 
   const submit = async () => {
@@ -120,23 +120,7 @@ export function PromptBar({ chat, agents, selection, scopeName, insetLeft = 12, 
           </button>
         )}
 
-        <form onSubmit={(e) => { e.preventDefault(); submit(); }} className="island w-full rounded-[20px] px-4 pt-3.5 pb-3">
-          <div className="flex items-center">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className={cn("inline-flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-full text-xs font-medium", selection ? "bg-scope/12 pr-1 pl-2.5 text-scope" : "bg-segment px-2.5 text-muted-foreground")}>
-                  <Crosshair size={12} weight="bold" className="shrink-0" />
-                  <span className="truncate">{scopeName ?? "Whole project"}</span>
-                  {selection && (
-                    <button type="button" onClick={onClearScope} aria-label="Clear scope: prompt the whole project" className="grid size-5 shrink-0 place-items-center rounded-full outline-none hover:bg-scope/15 focus-visible:ring-2 focus-visible:ring-ring">
-                      <X size={10} weight="bold" />
-                    </button>
-                  )}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{scopeTip}</TooltipContent>
-            </Tooltip>
-          </div>
+        <form onSubmit={(e) => { e.preventDefault(); submit(); }} className="island w-full rounded-[18px] px-3.5 pt-3 pb-2">
           <textarea
             ref={input}
             rows={1}
@@ -149,16 +133,30 @@ export function PromptBar({ chat, agents, selection, scopeName, insetLeft = 12, 
             }}
             placeholder={placeholder}
             aria-label="Prompt for Claude Code"
-            className="mt-2.5 mb-3 max-h-[180px] min-h-[48px] w-full resize-none bg-transparent text-[15px] leading-6 tracking-[-0.011em] outline-none placeholder:text-muted-foreground/80 disabled:cursor-not-allowed"
+            className="mb-1.5 block max-h-[160px] min-h-6 w-full resize-none bg-transparent px-1 text-[15px] leading-6 tracking-[-0.011em] outline-none placeholder:text-muted-foreground/80 disabled:cursor-not-allowed"
           />
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className={cn("inline-flex h-7 max-w-[42%] min-w-0 items-center gap-1.5 rounded-full text-xs font-medium", selection ? "bg-scope/12 pr-1 pl-2.5 text-scope" : "bg-segment px-2.5 text-muted-foreground")}>
+                  <Crosshair size={12} weight="bold" className="shrink-0" />
+                  <span className="truncate">{scopeName ?? "Whole project"}</span>
+                  {selection && (
+                    <button type="button" onClick={onClearScope} aria-label="Clear scope: prompt the whole project" className="grid size-5 shrink-0 place-items-center rounded-full outline-none hover:bg-scope/15 focus-visible:ring-2 focus-visible:ring-ring">
+                      <X size={10} weight="bold" />
+                    </button>
+                  )}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{scopeTip}</TooltipContent>
+            </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   type="button" variant="ghost" size="sm" onClick={toggleConcepts} aria-pressed={concepts}
-                  className={cn("h-8 shrink-0 gap-1.5 rounded-full px-3 text-xs", concepts ? "bg-scope/12 text-scope hover:bg-scope/16 hover:text-scope" : "text-muted-foreground")}
+                  className={cn("h-7 shrink-0 gap-1.5 rounded-full px-2.5 text-xs", concepts ? "bg-scope/12 text-scope hover:bg-scope/16 hover:text-scope" : "text-muted-foreground")}
                 >
-                  <SquaresFour size={14} weight={concepts ? "fill" : "regular"} /> 4 concepts
+                  <SquaresFour size={13} weight={concepts ? "fill" : "regular"} /> 4 concepts
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{concepts ? "Claude sketches 4 concepts to pick from before it changes the code" : "Claude changes the code straight away"}</TooltipContent>
@@ -167,14 +165,14 @@ export function PromptBar({ chat, agents, selection, scopeName, insetLeft = 12, 
             {error && <span className="min-w-0 truncate text-xs text-destructive">{error}</span>}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button type="button" variant="ghost" size="icon" className="ml-auto size-8 rounded-full text-muted-foreground" onClick={() => setOpen((o) => !o)} aria-pressed={open} aria-label={open ? "Hide sent prompts" : "Show sent prompts"}>
-                  <ChatsCircle size={16} />
+                <Button type="button" variant="ghost" size="icon" className="ml-auto size-7 rounded-full text-muted-foreground" onClick={() => setOpen((o) => !o)} aria-pressed={open} aria-label={open ? "Hide sent prompts" : "Show sent prompts"}>
+                  <ChatsCircle size={15} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Sent from the canvas</TooltipContent>
             </Tooltip>
-            <Button type="submit" size="icon" className="size-8 shrink-0 rounded-full" disabled={!current || !text.trim() || sending} aria-label="Send to Claude Code (Enter)">
-              <ArrowUp size={16} weight="bold" />
+            <Button type="submit" size="icon" className="size-7 shrink-0 rounded-full" disabled={!current || !text.trim() || sending} aria-label="Send to Claude Code (Enter)">
+              <ArrowUp size={14} weight="bold" />
             </Button>
           </div>
         </form>
@@ -184,13 +182,13 @@ export function PromptBar({ chat, agents, selection, scopeName, insetLeft = 12, 
 }
 
 function ChatPicker({ conns, current, onPick }: { conns: ChatConn[]; current: ChatConn | null; onPick: (id: string) => void }) {
-  if (!current) return <span className="inline-flex h-8 items-center gap-1.5 px-2 text-xs text-muted-foreground"><StatusDot status="offline" />No chat open</span>;
+  if (!current) return <span className="inline-flex h-7 items-center gap-1.5 px-2 text-xs text-muted-foreground"><StatusDot status="offline" />No chat open</span>;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-8 min-w-0 gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground" aria-label={`Sending to ${chatName(current)}, ${STATUS[current.status].word}. Choose chat`}>
+        <Button variant="ghost" size="sm" className="h-7 min-w-0 gap-1.5 rounded-full px-2 text-xs text-muted-foreground" aria-label={`Sending to ${chatName(current)}, ${STATUS[current.status].word}. Choose chat`}>
           <StatusDot status={current.status} />
-          <span className="max-w-[150px] truncate">{STATUS[current.status].word}</span>
+          <span className="max-w-[120px] truncate">{STATUS[current.status].word}</span>
           <CaretDown size={10} />
         </Button>
       </DropdownMenuTrigger>

@@ -53,7 +53,7 @@ export function CanvasView(props: Props) {
 }
 
 // Room the floating tools take: tabs on top, canvas toolbar on the right, prompt bar at the bottom
-const INSET = { top: 76, right: 72, bottom: 224 };
+const INSET = { top: 76, right: 72, bottom: 156 };
 
 function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, onPickElements, insetLeft = 12, findingCounts = {}, inspectingId = null, ref }: Props) {
   const rf = useReactFlow();
