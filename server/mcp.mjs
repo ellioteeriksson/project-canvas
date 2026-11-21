@@ -20,7 +20,9 @@ import { claudePid, commandLine } from "../scripts/proc.mjs";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(fs.readFileSync(path.resolve(HERE, "..", ".claude-plugin", "plugin.json"), "utf8")).version;
 const PROJECT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-const CONN = crypto.randomBytes(5).toString("hex");
+// In a session Loupe started itself, Loupe tells this server where the canvas is and who it is
+const MANAGED_URL = process.env.LOUPE_MANAGED_URL || null;
+const CONN = process.env.LOUPE_CONN || crypto.randomBytes(5).toString("hex");
 const CPID = claudePid();
 const CMDLINE = commandLine(CPID);
 // Channels only deliver when this plugin was named in --channels (or the development flag)
@@ -32,7 +34,7 @@ const write = (msg) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...
 const notify = (method, params) => write({ method, params });
 
 /* ---------------- canvas connection ---------------- */
-let canvasUrl = null; // set while the event stream to the canvas is open
+let canvasUrl = MANAGED_URL; // set while the event stream to the canvas is open
 let wait = null; // pending canvas_wait: { reqId, timer, progress }
 
 async function post(p, body) {
@@ -195,6 +197,13 @@ const TOOLS = [
   },
 ];
 
+const PERMISSION_TOOL = {
+  name: "canvas_permission",
+  description: "Used by Claude Code itself to ask the user in Loupe whether a tool call may run. Don't call it yourself.",
+  inputSchema: { type: "object", properties: { tool_name: { type: "string" }, input: { type: "object" }, tool_use_id: { type: "string" } }, required: ["tool_name"] },
+};
+const ACTIVE_TOOLS = MANAGED_URL ? [...TOOLS.filter((t) => !["canvas_wait", "canvas_stop_listening"].includes(t.name)), PERMISSION_TOOL] : TOOLS;
+
 const textResult = (text, isError = false) => ({ content: [{ type: "text", text }], isError });
 const listenResult = (text) => textResult(`${text}\n\nWhen you've answered (canvas_reply, canvas_concepts or canvas_findings), call canvas_wait again to keep listening to the canvas.`);
 
@@ -222,6 +231,17 @@ async function callTool(reqId, name, args, meta) {
     if (!canvasUrl) return write({ id: reqId, result: textResult("Loupe isn't running, so the findings can't be shown. Tell the user in this chat instead.", true) });
     const r = await post("/api/channel/findings", { id: String(args?.prompt_id || ""), findings: args?.findings });
     return write({ id: reqId, result: r.ok ? textResult("The findings are in Loupe. Don't fix anything unless the user asks.") : textResult(r.error || "Loupe didn't accept the findings.", true) });
+  }
+  if (name === "canvas_permission" && MANAGED_URL) {
+    // Wait for the user's answer in Loupe, however long it takes
+    let decision = { behavior: "deny", message: "Loupe didn't answer, so this wasn't run." };
+    try {
+      const r = await fetch(`${MANAGED_URL}/api/managed/permission`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conn: CONN, tool_name: args?.tool_name, input: args?.input ?? {}, tool_use_id: args?.tool_use_id }) });
+      const d = await r.json();
+      if (d?.behavior === "allow") decision = { behavior: "allow", updatedInput: args?.input ?? {} };
+      else if (d?.behavior === "deny") decision = { behavior: "deny", message: d.message || "The user declined this in Loupe." };
+    } catch {}
+    return write({ id: reqId, result: textResult(JSON.stringify(decision)) });
   }
   if (name === "canvas_stop_listening") {
     await post("/api/channel/stop-listening", {});
@@ -258,6 +278,13 @@ const INSTRUCTIONS = [
   "Only call canvas_wait when the user asked you to listen to the canvas (/loupe starts listening), or a canvas_wait result or a hook told you to call it again. If the user asks you to stop listening, call canvas_stop_listening.",
 ].join("\n");
 
+const MANAGED_INSTRUCTIONS = [
+  "Loupe started this Claude Code session for the project and shows its pages on a visual canvas. The user talks to you from Loupe and reads your replies there.",
+  'Canvas prompts arrive as <canvas-prompt prompt_id="…"> messages. Follow the <loupe-scope> block inside: it says which page, section or elements the prompt is about, and keep your changes to that scope.',
+  "When you have finished a canvas prompt, call canvas_reply with its prompt_id and a short summary of what you changed, in the language of the prompt.",
+  "Some canvas prompts ask for design concepts: then call canvas_concepts instead of editing files, and build only the concept the user picks.",
+].join("\n");
+
 async function handle(msg) {
   const { id, method, params } = msg;
   if (method === "initialize") {
@@ -268,12 +295,12 @@ async function handle(msg) {
         protocolVersion: asked < "2026-07-28" ? asked : "2025-06-18",
         capabilities: { experimental: { "claude/channel": {}, "claude/channel/permission": {} }, tools: {} },
         serverInfo: { name: "loupe", version: VERSION },
-        instructions: INSTRUCTIONS,
+        instructions: MANAGED_URL ? MANAGED_INSTRUCTIONS : INSTRUCTIONS,
       },
     });
   }
   if (method === "ping") return write({ id, result: {} });
-  if (method === "tools/list") return write({ id, result: { tools: TOOLS } });
+  if (method === "tools/list") return write({ id, result: { tools: ACTIVE_TOOLS } });
   if (method === "tools/call") return callTool(id, params?.name, params?.arguments || {}, params?._meta);
   if (method === "notifications/cancelled") {
     if (wait && wait.reqId === params?.requestId) { finishWait(null); post("/api/channel/waiting", { waiting: false }); }
@@ -294,4 +321,4 @@ rl.on("line", (line) => {
   for (const m of Array.isArray(msg) ? msg : [msg]) handle(m).catch((e) => log("error:", e.message));
 });
 rl.on("close", () => process.exit(0));
-connectLoop();
+if (!MANAGED_URL) connectLoop();

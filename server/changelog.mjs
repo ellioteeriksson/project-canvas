@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 
 const KEEP = 500;
 
-export function createChangelog({ root, broadcast }) {
+export function createChangelog({ root, broadcast, history, onClosed = () => {} }) {
   const file = path.join(root, ".canvas", "changelog.json");
   let entries = [];
   try { entries = JSON.parse(fs.readFileSync(file, "utf8")).entries || []; } catch {}
@@ -17,7 +17,7 @@ export function createChangelog({ root, broadcast }) {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       entries = entries.slice(-KEEP);
-      try { fs.writeFileSync(file, JSON.stringify({ entries }, null, 2)); } catch {}
+      try { fs.writeFileSync(file, JSON.stringify({ entries }, (k, v) => (k === "_before" ? undefined : v), 2)); } catch {}
     }, 300);
   }
   let pushTimer = null;
@@ -26,14 +26,17 @@ export function createChangelog({ root, broadcast }) {
     pushTimer = setTimeout(() => broadcast("changelog", list()), 60);
   }
   function list() {
-    const live = [...open.values()].filter((e) => e.files.length).map((e) => ({ ...e, inProgress: true }));
+    const live = [...open.values()].filter((e) => e.files.length).map(({ _before, ...e }) => ({ ...e, inProgress: true }));
     return [...entries, ...live].sort((a, b) => a.at - b.at);
   }
 
   /** A new request starts for this session: close whatever it was doing before. */
   function start(key, data) {
     close(key);
-    open.set(key, { id: crypto.randomBytes(4).toString("hex"), at: Date.now(), files: [], summary: null, ...data });
+    const e = { id: crypto.randomBytes(4).toString("hex"), at: Date.now(), files: [], summary: null, ...data };
+    open.set(key, e);
+    // A picture of the project before Claude touches it, for undo and before/after
+    if (history) e._before = history.checkpoint(`Before: ${String(e.prompt || "a change").slice(0, 120)}`).then((id) => { if (id) e.before = id; return id; }).catch(() => null);
   }
   function close(key) {
     const e = open.get(key);
@@ -41,8 +44,17 @@ export function createChangelog({ root, broadcast }) {
     open.delete(key);
     if (e.files.length) {
       e.endAt = Date.now();
+      const pending = e._before;
+      delete e._before;
       entries.push(e);
       save();
+      if (history) {
+        Promise.resolve(pending)
+          .then(() => history.checkpoint(`After: ${String(e.prompt || "a change").slice(0, 120)}`))
+          .then((id) => { if (id) { e.after = id; save(); push(); } })
+          .catch(() => {})
+          .finally(() => onClosed(e));
+      } else onClosed(e);
     }
     push();
   }
@@ -64,11 +76,32 @@ export function createChangelog({ root, broadcast }) {
     save();
     push();
   }
+  const get = (id) => entries.find((e) => e.id === id) || [...open.values()].find((e) => e.id === id) || null;
+  function update(id, patch) {
+    const e = get(id);
+    if (!e) return null;
+    Object.assign(e, typeof patch === "function" ? patch(e) : patch);
+    save();
+    push();
+    return e;
+  }
+  /** Entries still open or finished in the last half hour that touched one of these files */
+  const recent = (test) => {
+    const since = Date.now() - 30 * 60_000;
+    return [...open.values(), ...entries.filter((e) => (e.endAt || e.at) > since)].filter(test);
+  };
+  function add(data) {
+    const e = { id: crypto.randomBytes(4).toString("hex"), at: Date.now(), endAt: Date.now(), files: [], summary: null, ...data };
+    entries.push(e);
+    save();
+    push();
+    return e;
+  }
   function clear() {
     entries = [];
     save();
     push();
     return { ok: true };
   }
-  return { start, close, edited, summary, list, clear, push };
+  return { start, close, edited, summary, list, clear, push, get, update, recent, add };
 }

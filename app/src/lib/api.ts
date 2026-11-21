@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import type { Manifest, CanvasState, GitStatus, ShipAction, ShipResult, FrameStatus, Agent, EditEvent, SnapshotIndex, ChatState, CanvasPrompt, ChangelogEntry } from "./types";
+import type { Manifest, CanvasState, GitStatus, ShipAction, ShipResult, FrameStatus, Agent, EditEvent, SnapshotIndex, ChatState, CanvasPrompt, ChangelogEntry, ManagedSession, TranscriptEvent, CanvasComment } from "./types";
 
 async function post<T = unknown>(url: string, body: unknown): Promise<T> {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -17,7 +17,7 @@ export const api = {
   /** A real browser screenshot taken by the server. Resolves to the HTTP status. */
   renderSnapshot: (b: { viewId: string; device: string; layer: string; at: number }) =>
     fetch("/api/snapshot/render", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.status).catch(() => 0),
-  prompt: (text: string, conn?: string | null, mode: "direct" | "concepts" = "direct") => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/prompt", { text, conn, mode }),
+  prompt: (text: string, conn?: string | null, mode: "direct" | "concepts" = "direct", selection?: unknown) => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/prompt", { text, conn, mode, ...(selection !== undefined ? { selection } : {}) }),
   chooseConcept: (id: string, index: number, comment: string) => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/concepts/choose", { id, index, comment }),
   conceptsAgain: (id: string, comment: string) => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/concepts/again", { id, comment }),
   stopListening: (conn: string) => post("/api/listen/stop", { conn }),
@@ -25,7 +25,32 @@ export const api = {
   cancelPrompt: (id: string) => post("/api/prompt/cancel", { id }),
   clearPrompts: () => post("/api/prompt/clear", {}),
   permission: (request_id: string, behavior: "allow" | "deny") => post("/api/permission", { request_id, behavior }),
+  /* Claude Code sessions Loupe runs */
+  managed: {
+    info: () => fetch("/api/managed").then((r) => r.json()) as Promise<{ available: boolean; sessions: ManagedSession[]; previous: { id: string; label: string; claudeSession: string }[] }>,
+    ensure: () => post<{ ok: boolean; started?: boolean; error?: string }>("/api/managed/ensure", {}),
+    start: (b: { label?: string; resume?: string } = {}) => post<{ ok: boolean; error?: string; session?: ManagedSession }>("/api/managed/start", b),
+    interrupt: (id: string) => post("/api/managed/interrupt", { id }),
+    stop: (id: string) => post("/api/managed/stop", { id }),
+    transcript: (id: string) => fetch(`/api/managed/transcript?id=${encodeURIComponent(id)}`).then((r) => r.json()).then((d) => (d.events ?? []) as TranscriptEvent[]).catch(() => [] as TranscriptEvent[]),
+  },
+  /* version history */
+  history: {
+    diff: (entry: string) => fetch(`/api/history/diff?entry=${encodeURIComponent(entry)}`).then((r) => r.json()) as Promise<{ files?: { file: string; status: string }[]; diff?: string; error?: string }>,
+    undo: (entry: string, force = false) => post<{ ok: boolean; error?: string; conflict?: string[]; files?: string[] }>("/api/history/undo", { entry, force }),
+    restore: (entry: string, point: "before" | "after") => post<{ ok: boolean; error?: string; files?: string[] }>("/api/history/restore", { entry, point }),
+  },
+  /* comments pinned on the canvas */
+  comments: {
+    add: (c: Omit<CanvasComment, "id" | "at" | "status"> & { selection?: unknown }) => post<{ ok: boolean; error?: string; comment?: CanvasComment }>("/api/comments/add", c),
+    update: (b: { id: string; text?: string; status?: "open" | "resolved"; x?: number; y?: number }) => post("/api/comments/update", b),
+    remove: (id: string) => post("/api/comments/delete", { id }),
+    send: (ids: string[], conn?: string | null) => post<{ ok: boolean; error?: string; prompts?: CanvasPrompt[] }>("/api/comments/send", { ids, conn }),
+  },
 };
+
+/** Transcript events of Loupe's own Claude sessions, as they happen */
+export const AGENT_EVENT = "loupe:agent-event";
 
 /** How snapshots are taken: "browser" (sharp screenshots from the server) or "frame" (drawn in the canvas) */
 let engineP: Promise<"browser" | "frame"> | null = null;
@@ -49,6 +74,8 @@ export function useCanvasData() {
   const [snapshots, setSnapshots] = useState<SnapshotIndex>({});
   const [chat, setChat] = useState<ChatState>({ conns: [], prompts: [], permissions: [] });
   const [changelog, setChangelog] = useState<ChangelogEntry[]>([]);
+  const [managed, setManaged] = useState<ManagedSession[]>([]);
+  const [comments, setComments] = useState<CanvasComment[]>([]);
   // Latest agent edit per view ("*" = a global file such as a layout or global CSS)
   const [edits, setEdits] = useState<Record<string, number>>({});
 
@@ -67,6 +94,9 @@ export function useCanvasData() {
       es.addEventListener("snapshots", (e) => setSnapshots(JSON.parse((e as MessageEvent).data)));
       es.addEventListener("chat", (e) => setChat(JSON.parse((e as MessageEvent).data)));
       es.addEventListener("changelog", (e) => setChangelog(JSON.parse((e as MessageEvent).data)));
+      es.addEventListener("agents", (e) => setManaged(JSON.parse((e as MessageEvent).data)));
+      es.addEventListener("comments", (e) => setComments(JSON.parse((e as MessageEvent).data)));
+      es.addEventListener("agent-event", (e) => window.dispatchEvent(new CustomEvent(AGENT_EVENT, { detail: JSON.parse((e as MessageEvent).data) })));
       es.addEventListener("edited", (e) => {
         const ev: EditEvent = JSON.parse((e as MessageEvent).data);
         setEdits((prev) => {
@@ -82,7 +112,7 @@ export function useCanvasData() {
   }, []);
 
   const refreshGit = useCallback(async () => setGit(await (await fetch("/api/git/status")).json()), []);
-  return { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots, chat, changelog };
+  return { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots, chat, changelog, managed, comments };
 }
 
 /** Checks whether the project's dev server answers. */

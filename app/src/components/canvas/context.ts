@@ -1,5 +1,7 @@
 import { createContext, useContext } from "react";
-import type { Manifest, FrameStatus, Agent, SnapshotIndex, PickedElement } from "@/lib/types";
+import type { Manifest, FrameStatus, Agent, SnapshotIndex, PickedElement, CanvasComment } from "@/lib/types";
+
+export type CommentDraft = { viewId: string; x: number; y: number; section: { index: number; name: string } | null };
 
 export type CanvasCtx = {
   manifest: Manifest;
@@ -36,6 +38,13 @@ export type CanvasCtx = {
   setInteractive: (id: string | null) => void;
   rename: (id: string, name: string) => void;
   setParam: (route: string, url: string) => void;
+  /** Comment mode: clicking a page pins a comment there */
+  commenting: boolean;
+  comments: CanvasComment[];
+  activeComment: string | null;
+  showComment: (c: CanvasComment) => void;
+  draft: CommentDraft | null;
+  setDraft: (d: CommentDraft | null) => void;
 };
 export const CanvasContext = createContext<CanvasCtx | null>(null);
 export function useCanvas() {

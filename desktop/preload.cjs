@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("loupeShell", {
   platform: "tabbed",
   openProject: (p) => ipcRenderer.send("loupe:open-project", { url: String(p.url), root: String(p.root), name: String(p.name) }),
   showHome: () => ipcRenderer.send("loupe:show-home"),
+  play: (p) => ipcRenderer.send("loupe:play", { url: String(p.url), device: String(p.device), title: String(p.title) }),
   pickFolder: () => ipcRenderer.invoke("loupe:pick-folder"),
   reveal: (root) => ipcRenderer.send("loupe:reveal", String(root)),
 });

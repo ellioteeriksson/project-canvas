@@ -30,6 +30,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
   const now = () => Date.now();
   function statusOf(c) {
     if (!c.res) return "offline";
+    if (c.managed) return c.state === "working" || c.state === "waiting" ? "busy" : c.state === "starting" ? "starting" : "live";
     if (c.live) return "live";
     if (c.waiting) return "listening";
     if (c.session && isBusy(c.session)) return "busy";
@@ -39,6 +40,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     return {
       conns: [...conns.values()].map((c) => ({
         id: c.id, status: statusOf(c), live: c.live, listen: !!c.listen, session: c.session || null,
+        managed: !!c.managed, name: c.managed ? c.label : null,
         label: (c.session && sessions.get(c.session)?.prompt) || null,
         last: (c.session && sessions.get(c.session)?.last) || c.connectedAt, connectedAt: c.connectedAt,
       })).sort((a, b) => b.last - a.last),
@@ -128,8 +130,8 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
         conns.delete(id);
         for (const p of prompts) {
           if (p.conn !== id) continue;
-          if (["queued", "sending"].includes(p.status)) { p.status = "failed"; p.note = "The chat closed before it got the prompt"; }
-          else if (p.status === "delivered") { p.status = "failed"; p.note = "The chat closed without answering"; }
+          if (["queued", "sending"].includes(p.status)) { p.status = "failed"; p.note = "The chat closed before it got the prompt"; onEvent("failed", p, null); }
+          else if (p.status === "delivered") { p.status = "failed"; p.note = "The chat closed without answering"; onEvent("failed", p, null); }
         }
         for (const [rid, perm] of permissions) if (perm.conn === id) permissions.delete(rid);
         changed();
@@ -182,6 +184,40 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     push();
     return { ok: true };
   }
+
+  /* ---------- sessions Loupe runs itself (see agents.mjs) ---------- */
+  /** A managed session is a chat whose "stream" is a function: prompts go to it like to a live chat */
+  function attach(id, { label, write, session }) {
+    const c = conns.get(id) || { id, connectedAt: now() };
+    Object.assign(c, { managed: true, label, live: true, waiting: false, goneAt: null, state: "starting", res: { write }, session: session || c.session || null });
+    conns.set(id, c);
+    const q = nextQueued(id);
+    if (q) route(q);
+    push();
+    return c;
+  }
+  function setManaged(id, patch) {
+    const c = conns.get(id);
+    if (!c) return;
+    Object.assign(c, patch);
+    if (c.state !== "starting") { const q = nextQueued(id); if (q && c.res) route(q); }
+    push();
+  }
+  function detach(id, note = "The session stopped before it answered") {
+    const c = conns.get(id);
+    if (!c) return;
+    c.res = null;
+    conns.delete(id);
+    for (const p of prompts) {
+      if (p.conn !== id) continue;
+      if (["queued", "sending", "delivered"].includes(p.status)) { p.status = "failed"; p.note = note; onEvent("failed", p, null); }
+    }
+    for (const [rid, perm] of permissions) if (perm.conn === id) permissions.delete(rid);
+    changed();
+  }
+  /** The prompt a managed session is on, so its final answer can close it */
+  const openPromptOf = (connId) => [...prompts].reverse().find((p) => p.conn === connId && p.status === "delivered");
+  const promptById = (id) => prompts.find((p) => p.id === id) || null;
 
   /* ---------- hook side ---------- */
   function claim({ session, claudePid, via, stopHookActive }) {
@@ -251,10 +287,10 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     return { ok: true, prompt: pub };
   }
 
-  function submit({ text, conn, mode }) {
+  function submit({ text, conn, mode, selection, extra }) {
     const body = String(text || "").trim();
     if (!body) return { ok: false, error: "Write a prompt first" };
-    return createPrompt({ conn, text: body, mode: mode === "concepts" ? "concepts" : "direct", scope: scopeFor() });
+    return createPrompt({ conn, text: body, mode: mode === "concepts" ? "concepts" : "direct", scope: scopeFor(selection), ...(extra || {}) });
   }
 
   /* ---------- design concepts ---------- */
@@ -354,7 +390,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
 
   function cancel(id) {
     const p = prompts.find((x) => x.id === id);
-    if (p && p.status === "queued") { p.status = "cancelled"; changed(); return { ok: true }; }
+    if (p && p.status === "queued") { p.status = "cancelled"; onEvent("cancelled", p, null); changed(); return { ok: true }; }
     return { ok: false };
   }
   function verdict(requestId, behavior) {
@@ -376,5 +412,5 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     return [...conns.values()].filter((c) => c.session === session).map((c) => `conn:${c.id}`);
   }
 
-  return { rulesCheck, findings, connKeys, stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
+  return { attach, setManaged, detach, openPromptOf, promptById, rulesCheck, findings, connKeys, stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
 }

@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 
-export function createSnapshotStore(root) {
+export function createSnapshotStore(root, { keepOld = () => false } = {}) {
   const dir = path.join(root, ".canvas", "snapshots");
   const indexFile = path.join(dir, "index.json");
   let index = {};
@@ -33,7 +33,8 @@ export function createSnapshotStore(root) {
       const file = `${crypto.createHash("sha1").update(key).digest("hex").slice(0, 12)}-${stamp}.${m[1] === "jpeg" ? "jpg" : m[1]}`;
       fs.writeFileSync(path.join(dir, file), Buffer.from(m[2], "base64"));
       const prev = index[key];
-      if (prev && prev.file !== file) try { fs.unlinkSync(path.join(dir, prev.file)); } catch {}
+      // The old picture may be the "before" of a change: then it moves to the history folder
+      if (prev && prev.file !== file && !keepOld(key, prev)) try { fs.unlinkSync(path.join(dir, prev.file)); } catch {}
       index[key] = { file, at: stamp, h: Math.round(h), w: Math.round(w), sections: Array.isArray(sections) ? sections.slice(0, 60) : [], ...(engine === "browser" ? { engine } : {}) };
       save();
       return index[key];
@@ -45,7 +46,25 @@ export function createSnapshotStore(root) {
       save();
     },
 
+    /** Move or copy a snapshot into the history folder; returns its name there */
+    archive(name, { copy = false } = {}) {
+      const hist = path.join(dir, "history");
+      fs.mkdirSync(hist, { recursive: true });
+      const from = path.join(dir, path.basename(name));
+      try { copy ? fs.copyFileSync(from, path.join(hist, path.basename(name))) : fs.renameSync(from, path.join(hist, path.basename(name))); return `history/${path.basename(name)}`; } catch { return null; }
+    },
+    /** Remove history pictures no change refers to any more */
+    prune(keep) {
+      const hist = path.join(dir, "history");
+      try { for (const f of fs.readdirSync(hist)) if (!keep.has(`history/${f}`)) fs.unlinkSync(path.join(hist, f)); } catch {}
+    },
+
     filePath(name) {
+      if (String(name).startsWith("history/")) {
+        const hist = path.join(dir, "history");
+        const p = path.join(hist, path.basename(name));
+        return p.startsWith(hist) ? p : null;
+      }
       const p = path.join(dir, path.basename(name));
       return p.startsWith(dir) ? p : null;
     },

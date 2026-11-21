@@ -28,6 +28,8 @@ When a `<loupe-scope>` block names a view or component:
 | `config.json` | canvas UI + you | **Yes** (names, mode, layout, params) |
 | `manifest.json` | server (rescans when files change) | No |
 | `state.json` | server (pid, url, current selection) | No |
+| `changelog.json`, `chat.json`, `comments.json`, `agents.json` | server | No |
+| `history.git/` | server: Loupe's own version history of the project (a separate git dir; never use it as the project's repo) | No |
 
 The server watches the project and rescans on every save. **Edit `config.json` and the canvas updates live.** Never hand-edit `manifest.json`.
 
@@ -103,6 +105,14 @@ The canvas has a prompt bar that sends prompts to a Claude Code chat open in the
 - `/loupe` starts listening (`canvas_wait`) after opening the canvas. After the user interrupts to use the chat, the Stop hook tells you to go back to listening; call `canvas_stop_listening` if they ask you to stop.
 - Only call `canvas_wait` when the user asked you to listen (`/loupe-listen`) or a `canvas_wait` result says to call it again.
 - History is kept in `.canvas/chat.json` (ignored by git). The canvas pairs chats with hook events by Claude Code's process id.
+
+### Sessions Loupe runs itself
+
+In the Loupe app (or from the chat panel), Loupe can start Claude Code sessions in the project: `claude -p` with streaming JSON, `--permission-mode acceptEdits`, and Loupe's MCP server in managed mode. In such a session the plugin's hooks are off, prompts arrive directly as `<canvas-prompt>` messages, and there is no `canvas_wait` or `canvas_stop_listening`. Answer with `canvas_reply`, `canvas_concepts` or `canvas_findings` as usual. Shell commands and other tools that need approval are asked of the user in Loupe through the `canvas_permission` tool, which Claude Code calls itself.
+
+### Comments
+
+Comments pinned on the canvas arrive as normal canvas prompts, scoped to the page (and the section, for a single comment). Each comment says where it's pinned: % across and px down the page. Work out which element that is, make the change, and reply with `canvas_reply`; the comments resolve themselves.
 
 ## House rules and the helper buddy
 

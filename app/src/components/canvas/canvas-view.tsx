@@ -3,16 +3,17 @@ import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant, Panel,
   useReactFlow, useViewport, useNodesState, type Node, type NodeMouseHandler,
 } from "@xyflow/react";
-import { TreeStructure, FlowArrow, Desktop, DeviceMobile, LinkBreak, Copy, Check, Rectangle, ArrowsVertical, Browser, Layout, ArrowsOut, Crosshair } from "@phosphor-icons/react";
+import { TreeStructure, FlowArrow, Desktop, DeviceMobile, LinkBreak, Copy, Check, Rectangle, ArrowsVertical, Browser, Layout, ArrowsOut, Crosshair, ChatTeardropText } from "@phosphor-icons/react";
+import { cn } from "@/lib/utils";
 import { Kbd } from "@/components/ui/kbd";
-import type { Manifest, FrameStatus, Agent, SnapshotIndex, Selection, PickedElement } from "@/lib/types";
+import type { Manifest, FrameStatus, Agent, SnapshotIndex, Selection, PickedElement, CanvasComment } from "@/lib/types";
 import { snapshotKey } from "@/lib/api";
 import { setLoadLimit } from "@/lib/load-queue";
 import { api, useDevServer } from "@/lib/api";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { CanvasContext, type CanvasCtx } from "./context";
+import { CanvasContext, type CanvasCtx, type CommentDraft } from "./context";
 import { buildGraph } from "./layout";
 import { FrameNode, GroupNode } from "./frame-node";
 
@@ -41,6 +42,13 @@ type Props = {
   insetLeft?: number;
   findingCounts?: Record<string, number>;
   inspectingId?: string | null;
+  /** Room taken on the right: the canvas toolbar, plus the side panel when it's open */
+  insetRight?: number;
+  commenting?: boolean;
+  comments?: CanvasComment[];
+  activeComment?: string | null;
+  onShowComment?: (c: CanvasComment) => void;
+  onCommenting?: (on: boolean) => void;
   ref?: Ref<CanvasHandle>;
 };
 
@@ -53,9 +61,12 @@ export function CanvasView(props: Props) {
 }
 
 // Room the floating tools take: tabs on top, canvas toolbar on the right, prompt bar at the bottom
-const INSET = { top: 76, right: 72, bottom: 156 };
+const BASE_INSET = { top: 76, right: 72, bottom: 156 };
 
-function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, onPickElements, insetLeft = 12, findingCounts = {}, inspectingId = null, ref }: Props) {
+function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, onPickElements, insetLeft = 12, findingCounts = {}, inspectingId = null, insetRight = 0, commenting = false, comments = [], activeComment = null, onShowComment = () => {}, onCommenting = () => {}, ref }: Props) {
+  const INSET = { ...BASE_INSET, right: BASE_INSET.right + insetRight };
+  const [draft, setDraft] = useState<CommentDraft | null>(null);
+  useEffect(() => { if (!commenting) setDraft(null); }, [commenting]);
   const rf = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
   const mode = manifest.mode;
@@ -123,7 +134,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     }
     return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
   }, [rf]);
-  const fitAll = useCallback((duration = 450) => { const b = boundsOf(); if (b) rf.fitBounds(b, { padding: { top: `${INSET.top}px`, bottom: `${INSET.bottom}px`, left: `${insetLeft + 36}px`, right: `${INSET.right + 12}px` }, duration }); }, [rf, boundsOf, insetLeft]);
+  const fitAll = useCallback((duration = 450) => { const b = boundsOf(); if (b) rf.fitBounds(b, { padding: { top: `${INSET.top}px`, bottom: `${INSET.bottom}px`, left: `${insetLeft + 36}px`, right: `${INSET.right + 12}px` }, duration }); }, [rf, boundsOf, insetLeft, insetRight]); // eslint-disable-line react-hooks/exhaustive-deps
   const focus = useCallback((id: string) => {
     const b = boundsOf([id]);
     if (!b) return;
@@ -136,7 +147,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     const zoom = Math.min(3, (visW - 48) / b.width, (visH - 24) / b.height);
     const dx = (insetLeft + visW / 2 - W / 2) / zoom, dy = (INSET.top + visH / 2 - H / 2) / zoom;
     rf.setCenter(b.x + b.width / 2 - dx, b.y + b.height / 2 - dy, { zoom, duration: 450 });
-  }, [rf, boundsOf, insetLeft]);
+  }, [rf, boundsOf, insetLeft, insetRight]); // eslint-disable-line react-hooks/exhaustive-deps
   const zoomToCenter = useCallback(() => {
     const el = wrapper.current;
     if (!el) return;
@@ -189,7 +200,9 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
       const t = e.target as HTMLElement;
       if (t.closest("input, textarea, [contenteditable]")) return;
       if (e.key === "Escape") {
-        if (pickingId) setPicking(null);
+        if (draft) setDraft(null);
+        else if (commenting) onCommenting(false);
+        else if (pickingId) setPicking(null);
         else if (interactiveId) setInteractive(null);
         // Step out one level: section or elements → their view → nothing
         else if (selection && (selection.kind === "section" || selection.kind === "elements")) onSelect(selection.viewId);
@@ -200,7 +213,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [interactiveId, pickingId, onSelect, fitAll, zoomToCenter, selection]);
+  }, [interactiveId, pickingId, onSelect, fitAll, zoomToCenter, selection, draft, commenting, onCommenting]);
 
   const ctx: CanvasCtx = {
     manifest, device, selectedId, interactiveId, showLive, devUp, reloadKey,
@@ -222,6 +235,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     setInteractive,
     rename: (id, name) => api.config({ names: { [id]: name } }),
     setParam: (route, url) => api.config({ params: { [route]: url } }),
+    commenting, comments: comments.filter((x) => x.device === device && x.status !== "resolved"), activeComment, showComment: onShowComment, draft, setDraft,
   };
 
   const onNodeClick: NodeMouseHandler = (_, n) => { if (n.type === "frame") onSelect(n.id); };
@@ -241,7 +255,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
           onNodesChange={onNodesChange}
           onNodeClick={onNodeClick}
           onNodeDragStop={onNodeDragStop}
-          onPaneClick={() => { setInteractive(null); setPicking(null); if (!pickingId) onSelect(null); }}
+          onPaneClick={() => { setInteractive(null); setPicking(null); if (draft) setDraft(null); else if (!pickingId && !commenting) onSelect(null); }}
           onMove={(_, vp) => {
             setShowLive(vp.zoom >= LIVE_ZOOM);
             // Keep frame titles readable at any zoom, like Figma (no React re-render)
@@ -258,9 +272,17 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
           proOptions={{ hideAttribution: true }}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="var(--paper-dot)" />
-          <Panel position="center-right" className="!m-3">
-            <CanvasToolbar manifest={manifest} onFit={() => fitAll()} onCenter={zoomToCenter} />
+          <Panel position="center-right" className="!m-3" style={{ marginRight: 12 + insetRight }}>
+            <CanvasToolbar manifest={manifest} onFit={() => fitAll()} onCenter={zoomToCenter} commenting={commenting} onCommenting={onCommenting} />
           </Panel>
+          {commenting && !draft && (
+            <Panel position="top-center" className="!mt-[68px]">
+              <div role="status" className="flex items-center gap-3 rounded-lg bg-scope py-1.5 pr-1.5 pl-3 text-[13px] text-white shadow-lg">
+                <span><b className="font-semibold">Click</b> anywhere on a page to leave a comment · <b className="font-semibold">Esc</b> to stop</span>
+                <Button size="sm" variant="secondary" onClick={() => onCommenting(false)}>Done</Button>
+              </div>
+            </Panel>
+          )}
           {pickingId && (
             <Panel position="top-center" className="!mt-3">
               <div role="status" className="flex items-center gap-3 rounded-lg bg-scope py-1.5 pr-1.5 pl-3 text-[13px] text-white shadow-lg">
@@ -289,7 +311,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
 }
 
 /** View options for the canvas: one quiet column of icons on the right edge. */
-function CanvasToolbar({ manifest, onFit, onCenter }: { manifest: Manifest; onFit: () => void; onCenter: () => void }) {
+function CanvasToolbar({ manifest, onFit, onCenter, commenting, onCommenting }: { manifest: Manifest; onFit: () => void; onCenter: () => void; commenting: boolean; onCommenting: (on: boolean) => void }) {
   const { zoom } = useViewport();
   const sep = <span aria-hidden className="my-1 h-px w-5 bg-border" />;
   const tip = (label: React.ReactNode, el: React.ReactElement) => (
@@ -300,6 +322,8 @@ function CanvasToolbar({ manifest, onFit, onCenter }: { manifest: Manifest; onFi
   const btn = "size-9 rounded-[10px] text-muted-foreground [&_svg]:size-[17px]";
   return (
     <div className="island flex flex-col items-center p-1.5" role="toolbar" aria-orientation="vertical" aria-label="Canvas view">
+      {tip(<>Comment: pin a note on a page <Kbd>C</Kbd></>, <Button variant="ghost" size="icon" className={cn(btn, commenting && "bg-scope text-white hover:bg-scope hover:text-white")} onClick={() => onCommenting(!commenting)} aria-pressed={commenting} aria-label="Comment mode"><ChatTeardropText weight={commenting ? "fill" : "regular"} /></Button>)}
+      {sep}
       <ToggleGroup type="single" orientation="vertical" className={group} value={manifest.mode} onValueChange={(v) => v && api.config({ mode: v })} aria-label="Layout">
         {tip("Sitemap: pages as a tree by URL", <ToggleGroupItem className={item} value="sitemap" aria-label="Sitemap layout"><TreeStructure /></ToggleGroupItem>)}
         {tip("Flow: screens connected by their links", <ToggleGroupItem className={item} value="flow" aria-label="Flow layout"><FlowArrow /></ToggleGroupItem>)}

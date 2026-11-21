@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { useCanvas } from "./context";
 import { frameSize, pageHeight, TITLE_H, type FrameData, type GroupData } from "./layout";
 import { EditableName } from "./editable-name";
+import { CommentLayer } from "./comment-pins";
 import { useLoadSlot, releaseSlot } from "@/lib/load-queue";
 
 const STATUS_TEXT: Record<number, string> = {
@@ -404,6 +405,11 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
           </div>
         )}
       </div>
+      {v.url && (c.commenting || c.comments.some((x) => x.viewId === viewId) || c.draft?.viewId === viewId) && (
+        <div className="pointer-events-none absolute left-0 [&>*]:pointer-events-auto" style={{ top: TITLE_H, width: f.w, height: cardH }}>
+          <CommentLayer viewId={viewId} viewName={v.name} pageH={pageH} scale={f.scale} sections={sections} interactive={interactive} />
+        </div>
+      )}
       <Handle id="out" type="source" position={sourcePosition ?? Position.Bottom} isConnectable={false} />
       <Handle id="back-out" type="source" position={targetPosition ?? Position.Top} isConnectable={false} />
     </div>

@@ -19,6 +19,9 @@ import { createChangelog } from "./changelog.mjs";
 import { buildScope } from "../scripts/scope.mjs";
 import { remember } from "./registry.mjs";
 import { createShooter } from "./shooter.mjs";
+import { createAgents } from "./agents.mjs";
+import { createHistory } from "./history.mjs";
+import { createComments } from "./comments.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(HERE, "..", "app", "dist");
@@ -51,7 +54,8 @@ function pidAlive(pid) {
 
 let manifest = null;
 let lastSig = "";
-const snapshots = createSnapshotStore(ROOT);
+const snapshots = createSnapshotStore(ROOT, { keepOld: (key, prev) => keepAsBefore(key, prev) });
+const history = createHistory({ root: ROOT, log: (m) => console.log(`[loupe] ${m}`) });
 const shooter = createShooter({ log: (m) => console.log(`[loupe] ${m}`) });
 let refreshAt = 0; // "Refresh all snapshots" from settings
 let siteUrl = null; // static server for plain-HTML projects
@@ -180,7 +184,57 @@ function previewInfo(sel) {
     selectors: sel?.kind === "elements" ? sel.elements.map((e) => e.selector) : [],
   };
 }
-const changelog = createChangelog({ root: ROOT, broadcast: (e, d) => broadcast(e, d) });
+const changelog = createChangelog({ root: ROOT, broadcast: (e, d) => broadcast(e, d), history, onClosed: (e) => shootAfter(e) });
+
+const comments = createComments({ root: ROOT, broadcast: (e, d) => broadcast(e, d) });
+
+/* ---------------- before/after pictures of each change ---------------- */
+const shotDevice = () => (manifest?.viewport === "mobile" ? "mobile" : "desktop");
+/** Views a change touched; a change to global styles counts for the first few pages */
+function viewsOf(entry) {
+  const ids = new Set();
+  let global = false;
+  for (const f of entry.files || []) { const r = viewsForFile(f); r.views.forEach((v) => ids.add(v)); global ||= r.global; }
+  if (!ids.size && global) manifest?.views.filter((v) => v.url && !v.dynamic).slice(0, 3).forEach((v) => ids.add(v.id));
+  return [...ids].slice(0, 4);
+}
+/** A snapshot is being replaced: keep the old one if it shows a page before a change */
+function keepAsBefore(key, prev) {
+  const [viewId, device, layer] = key.split("|");
+  if (layer !== "live" || device !== shotDevice()) return false;
+  const want = changelog.recent((e) => !e.shots?.[viewId]?.before && prev.at <= e.at && viewsOf(e).includes(viewId));
+  if (!want.length) return false;
+  const name = snapshots.archive(prev.file);
+  if (!name) return false;
+  for (const e of want) changelog.update(e.id, (x) => ({ shots: { ...x.shots, [viewId]: { ...x.shots?.[viewId], before: name, h: prev.h, w: prev.w } } }));
+  return true;
+}
+/** When a change is done, take fresh pictures of the pages it touched */
+async function shootAfter(entry) {
+  const base = manifest?.frameUrl || manifest?.devUrl;
+  if (!base || !shooter.available()) return;
+  await new Promise((r) => setTimeout(r, 1500)); // let the dev server reload
+  const device = shotDevice();
+  for (const viewId of viewsOf(entry)) {
+    const view = manifest?.views.find((v) => v.id === viewId);
+    if (!view?.url || view.dynamic) continue;
+    const key = `${viewId}|${device}|live`;
+    try {
+      const at = Date.now();
+      const shot = await shooter.shoot({ key, url: base.replace(/\/$/, "") + (view.url.startsWith("/") ? view.url : "/" + view.url), device, wire: false });
+      const put = snapshots.put({ key, at, ...shot });
+      const name = snapshots.archive(put.file, { copy: true });
+      if (name) changelog.update(entry.id, (x) => ({ shots: { ...x.shots, [viewId]: { ...x.shots?.[viewId], after: name, device, h: put.h, w: put.w } } }));
+      broadcast("snapshots", snapshots.index);
+    } catch {}
+  }
+}
+// History pictures no change refers to any more
+setTimeout(() => {
+  const keep = new Set();
+  for (const e of changelog.list()) for (const s of Object.values(e.shots || {})) { if (s.before) keep.add(s.before); if (s.after) keep.add(s.after); }
+  snapshots.prune(keep);
+}, 5000).unref?.();
 const keyOf = (c) => c?.session || (c ? `conn:${c.id}` : null);
 const hub = createChannelHub({
   root: ROOT,
@@ -189,16 +243,32 @@ const hub = createChannelHub({
       const apply = p.mode === "apply";
       changelog.start(keyOf(c), { source: "canvas", promptId: p.id, prompt: apply ? p.parentText || p.text : p.text, detail: apply ? p.text : null, scope: p.scope, mode: p.mode });
     }
-    if (type === "reply") changelog.summary(p.id, p.reply);
+    if (type === "reply") { changelog.summary(p.id, p.reply); comments.promptDone(p.id, p.reply); }
+    if (type === "failed" || type === "cancelled") comments.promptFailed(p.id);
     if (type === "waiting" && c) { changelog.close(keyOf(c)); changelog.close(`conn:${c.id}`); }
   },
   broadcast: (e, d) => broadcast(e, d),
-  scopeFor: () => {
-    const sel = readState().selection;
+  scopeFor: (given) => {
+    const sel = given === undefined ? readState().selection : given;
     return { label: scopeLabel(sel), scope: buildScope(sel, manifest), info: previewInfo(sel) };
   },
   isBusy: (session) => [...agents.values()].some((a) => a.session === session),
 });
+
+/* ---------------- Claude Code sessions Loupe runs itself ---------------- */
+const claudes = createAgents({
+  root: ROOT, hub, broadcast: (e, d) => broadcast(e, d),
+  recordActivity: (ev) => recordActivity(ev),
+  serverUrl: () => readState().url,
+  log: (m) => console.log(`[loupe] claude: ${m}`),
+});
+/** Files behind the selected page, so a prompt about it goes to the session that knows it */
+function selectionFiles() {
+  const sel = readState().selection;
+  const id = sel?.kind === "view" ? sel.id : sel?.viewId;
+  const v = manifest?.views.find((x) => x.id === id);
+  return v ? [v.file, ...(v.files || [])].filter(Boolean) : [];
+}
 
 /* ---------------- watcher ---------------- */
 let timer = null;
@@ -274,6 +344,8 @@ async function handle(req, res) {
     res.write(`event: activity\ndata: ${JSON.stringify(activityList())}\n\n`);
     res.write(`event: snapshots\ndata: ${JSON.stringify(snapshots.index)}\n\n`);
     res.write(`event: chat\ndata: ${JSON.stringify(hub.summary())}\n\n`);
+    res.write(`event: agents\ndata: ${JSON.stringify(claudes.list())}\n\n`);
+    res.write(`event: comments\ndata: ${JSON.stringify(comments.list())}\n\n`);
     res.write(`event: changelog\ndata: ${JSON.stringify(changelog.list())}\n\n`);
     clients.add(res);
     const ping = setInterval(() => res.write(": ping\n\n"), 20_000);
@@ -361,7 +433,38 @@ async function handle(req, res) {
     return r ? send(res, 200, r()) : send(res, 404, { error: "unknown" });
   }
   /* prompts: canvas UI */
-  if (req.method === "POST" && p === "/api/prompt") { const b = await readBody(req); const r = hub.submit(b); return send(res, r.ok ? 200 : 400, r); }
+  if (req.method === "POST" && p === "/api/prompt") {
+    const b = await readBody(req);
+    // "auto": Loupe picks among its own sessions (the one that worked on this page, else a free one)
+    if (b.conn === "auto") b.conn = claudes.pick(selectionFiles());
+    delete b.extra;
+    const r = hub.submit(b);
+    return send(res, r.ok ? 200 : 400, r);
+  }
+  /* Claude Code sessions Loupe runs */
+  if (p === "/api/managed" && req.method === "GET") return send(res, 200, { available: claudes.available(), sessions: claudes.list(), previous: claudes.previous() });
+  if (p === "/api/managed/transcript") return send(res, 200, { events: claudes.transcript(url.searchParams.get("id")) });
+  if (req.method === "POST" && p.startsWith("/api/managed/")) {
+    const b = await readBody(req);
+    if (p === "/api/managed/permission") return send(res, 200, await claudes.permission(b.conn, b));
+    if (p === "/api/managed/ensure") {
+      // Opening a project in the app: start a session unless a chat is already connected
+      const open = hub.summary().conns.filter((c) => c.status !== "offline");
+      if (open.length || !claudes.available()) return send(res, 200, { ok: true, started: false, available: claudes.available() });
+      const prev = b.resume !== false ? claudes.previous()[0] : null;
+      const r = claudes.start({ resume: prev?.claudeSession, label: prev?.label });
+      return send(res, r.ok ? 200 : 400, { ...r, started: r.ok });
+    }
+    const r = {
+      "/api/managed/start": () => claudes.start({ label: b.label, resume: b.resume }),
+      "/api/managed/say": () => claudes.say(b.id, b.text),
+      "/api/managed/interrupt": () => claudes.interrupt(b.id),
+      "/api/managed/stop": () => claudes.stop(b.id),
+    }[p];
+    if (!r) return send(res, 404, { error: "unknown" });
+    const out = r();
+    return send(res, out.ok === false ? 400 : 200, out);
+  }
   if (req.method === "POST" && p === "/api/prompt/cancel") return send(res, 200, hub.cancel((await readBody(req)).id));
   if (req.method === "POST" && p === "/api/prompt/clear") return send(res, 200, hub.clear());
   if (req.method === "POST" && p === "/api/concepts/choose") { const r = hub.choose(await readBody(req)); return send(res, r.ok ? 200 : 400, r); }
@@ -398,6 +501,64 @@ async function handle(req, res) {
   }
   if (req.method === "POST" && p === "/api/audit/rules") { const r = hub.rulesCheck(await readBody(req)); return send(res, r.ok ? 200 : 400, r); }
   if (req.method === "POST" && p === "/api/changelog/clear") return send(res, 200, changelog.clear());
+  /* comments on the canvas */
+  if (p === "/api/comments" && req.method === "GET") return send(res, 200, { comments: comments.list() });
+  if (req.method === "POST" && p.startsWith("/api/comments/")) {
+    const b = await readBody(req);
+    if (p === "/api/comments/send") {
+      // One prompt per page, scoped to that page (or the section, for a single comment)
+      const list = (b.ids || []).map((id) => comments.get(id)).filter((c) => c && c.status !== "resolved");
+      if (!list.length) return send(res, 400, { error: "Pick a comment to send" });
+      const byView = new Map();
+      for (const c of list) byView.set(c.viewId, [...(byView.get(c.viewId) || []), c]);
+      const out = [];
+      for (const group of byView.values()) {
+        const { text, body } = comments.promptFor(group);
+        const one = group.length === 1 ? group[0] : null;
+        let sel = null;
+        try { sel = one?.section ? selectionRecord({ kind: "section", id: `${one.viewId}::${one.section.index}`, device: one.device }) : selectionRecord({ kind: "view", id: group[0].viewId }); } catch {}
+        let conn = b.conn;
+        if (!conn || conn === "auto") { const v = manifest?.views.find((x) => x.id === group[0].viewId); conn = claudes.pick(v ? [v.file, ...(v.files || [])].filter(Boolean) : []); }
+        const r = hub.submit({ text, conn, selection: sel, extra: { body } });
+        if (!r.ok) return send(res, 400, r);
+        comments.sent(group.map((c) => c.id), r.prompt.id);
+        out.push(r.prompt);
+      }
+      return send(res, 200, { ok: true, prompts: out });
+    }
+    const r = { "/api/comments/add": () => comments.add(b), "/api/comments/update": () => comments.update(b), "/api/comments/delete": () => comments.remove(b.id) }[p]?.();
+    if (!r) return send(res, 404, { error: "unknown" });
+    return send(res, r.ok ? 200 : 400, r);
+  }
+  /* version history */
+  if (p === "/api/history/diff") {
+    const e = changelog.get(url.searchParams.get("entry"));
+    if (!e?.before || !e?.after) return send(res, 404, { error: "No saved versions for this change" });
+    const files = await history.changed(e.before, e.after);
+    const own = files.filter((f) => !e.files?.length || e.files.includes(f.file));
+    return send(res, 200, { files: own.length ? own : files, diff: await history.diff(e.before, e.after, (own.length ? own : files).map((f) => f.file)) });
+  }
+  if (req.method === "POST" && p === "/api/history/undo") {
+    const b = await readBody(req);
+    const e = changelog.get(b.entry);
+    if (!e?.before || !e?.after) return send(res, 404, { error: "Loupe has no saved version from before this change." });
+    const r = await history.undo({ before: e.before, after: e.after, label: e.prompt, force: !!b.force });
+    if (r.ok) {
+      changelog.update(e.id, { undone: Date.now() });
+      changelog.add({ source: "loupe", kind: "undo", undoOf: e.id, prompt: `Undo: ${e.prompt || "a change"}`, files: r.files, after: r.version, before: e.after, summary: `Put ${r.files.length} file${r.files.length === 1 ? "" : "s"} back the way ${r.files.length === 1 ? "it was" : "they were"} before this change.` });
+    }
+    return send(res, r.ok || r.conflict ? 200 : 400, r);
+  }
+  if (req.method === "POST" && p === "/api/history/restore") {
+    const b = await readBody(req);
+    const e = changelog.get(b.entry);
+    const id = b.point === "before" ? e?.before : e?.after;
+    if (!id) return send(res, 404, { error: "Loupe has no saved version for that point." });
+    const when = new Date(b.point === "before" ? e.at : e.endAt || e.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const r = await history.restore({ id, label: `${b.point === "before" ? "before" : "after"} “${e.prompt || "a change"}”` });
+    if (r.ok && r.files.length) changelog.add({ source: "loupe", kind: "restore", prompt: `Restored the project to ${b.point === "before" ? "before" : "after"} “${String(e.prompt || "a change").slice(0, 80)}” (${when})`, files: r.files, before: r.undoPoint, after: r.version, summary: `${r.files.length} file${r.files.length === 1 ? "" : "s"} changed back.` });
+    return send(res, r.ok ? 200 : 400, r);
+  }
   if (req.method === "POST" && p === "/api/listen/stop") return send(res, 200, hub.stopListening((await readBody(req)).conn));
   if (req.method === "POST" && p === "/api/permission") { const b = await readBody(req); return send(res, 200, hub.verdict(b.request_id, b.behavior)); }
 

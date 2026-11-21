@@ -3,6 +3,8 @@ export type Shell = {
   platform: string;
   openProject: (p: { url: string; root: string; name: string }) => void;
   showHome: () => void;
+  /** Play the site full screen in its own window (Esc leaves) */
+  play?: (p: { url: string; device: string; title: string }) => void;
   pickFolder: () => Promise<string | null>;
   reveal: (root: string) => void;
 };

@@ -12,7 +12,10 @@ Loupe is a Claude Code plugin for designers and developers. It lays out every pa
 - **Point, then prompt.** Select a view, a section (hero, features, footer …) or individual elements, and your next prompt only touches that. Prompt from the bar at the bottom of the canvas, or in Claude Code as usual. Loupe adds the scope either way.
 - **Pick from 4 concepts.** With **4 concepts** on, a design request opens a drawer where Claude sketches four directions, previewed on the real page. Comment on the one you like and pick it, and Claude builds it. Not quite right? Ask for four new ones.
 - **Let Lou check your work.** Click Lou in the corner to check the whole project, or drag him onto one page to check just that page. He reports pages that break their siblings' layout, your house rules, off-token colors and fonts, accessibility, broken links, mobile and SEO. Every finding has a **Fix** button that sends it to Claude, and **Fix all** sends them in one go. Ignore what doesn't matter to you, and he remembers. He also tells (bad) jokes.
-- **Know what changed.** The **Changelog** tab logs every change Claude makes with the request, the scope, Claude's summary and the files it touched. Export it as Markdown.
+- **Talk to Claude without a terminal.** In the Loupe app, opening a project starts a Claude Code session for it in the background. Prompt from the bar, or open the chat panel (⌘J) to follow everything Claude says and does. Edits go through on their own; shell commands and anything outside the project ask you first, in Loupe. Start more sessions to have several Claudes work in parallel: each prompt goes to the Claude that worked on that page, or to a free one.
+- **Comment on the canvas.** Press **C** and click anywhere on a page to pin a note, like in Figma. Send notes to Claude one at a time or all together; each is scoped to the page and section it sits on, and resolves itself when Claude is done.
+- **Know what changed, and undo it.** The **Changelog** tab logs every change Claude makes with the request, the scope, Claude's summary, the files it touched and a before/after picture of the page (drag to compare). See the code changes, undo one change, or put the whole project back to how it was before or after any change. Export it as Markdown.
+- **Play it.** The ▶ button opens the site full screen from the selected page, the way visitors see it (Esc to leave).
 - **See your design system.** Tokens, primitives and components, and which views use each. Select a component to scope prompts to it.
 - **Ship it.** Commit, push or open a pull request from the top bar, with a commit message Claude can draft from the diff.
 
@@ -42,7 +45,9 @@ claude plugin marketplace update loupe && claude plugin update loupe@loupe
 
 All your Loupe projects in one place, like Figma's file browser. The app lists every project you've opened Loupe in (it also finds the ones from before you installed it), with a picture of each home page and whether Claude is connected or working. Click one and its canvas opens in its own window. There's no need to run `/loupe` first.
 
-The canvases are the same local servers `/loupe` starts, so Claude Code sessions in those projects connect to them as usual: from the terminal, or the Code tab in the Claude desktop app. They keep running when you close the app.
+When a project opens, the app starts a Claude Code session in it (unless a chat is already connected), so you can prompt straight away. It uses the Claude Code installed on your computer and your own login. Open the chat panel with ⌘J to see the conversation, answer permission requests, stop Claude, or start more sessions to work in parallel. The session picks up where the last one left off the next time you open the project.
+
+The canvases are the same local servers `/loupe` starts, so Claude Code sessions you start yourself connect to them as usual: from the terminal, or the Code tab in the Claude desktop app. Canvases keep running when you close the app; close one from the project's menu on the Projects page to stop it and its sessions.
 
 To run it from this repository (Node 20+):
 
@@ -154,13 +159,17 @@ The same problem on many pages is grouped into one finding. Lou only runs when y
 
 If something is missed, add it in `.canvas/config.json` (`views`, `framework`, `devUrl`, `params` for dynamic routes). The skill documents every key. Commit `config.json`. `state.json` and `manifest.json` are gitignored automatically.
 
+### Version history
+
+Loupe keeps its own history of the project's files in `.canvas/history.git`, apart from your git repository (it never touches your commits or branches). It saves a version before and after every change Claude makes, and your own edits in between. Your `.gitignore` is respected, and `node_modules` and build output are left out. It needs `git` on your computer.
+
 ### Snapshots
 
 Frames show snapshots of each page until you interact with them. Loupe takes them as real screenshots in a headless Chrome, Edge, Brave or Chromium that's already on your computer, at 2× (3× for mobile), so they stay sharp when you zoom in. Wireframes are rendered the same way. With none of those browsers installed, it draws snapshots inside the canvas instead, at lower quality. Set `LOUPE_CHROME` to a browser's path to choose one.
 
 ## Privacy
 
-Loupe runs entirely on your machine. The canvas server listens on `127.0.0.1` only and refuses requests from other sites. Nothing is sent anywhere except through your own Claude Code session. The list of your projects is kept in `~/.claude/loupe/projects.json`.
+Loupe runs entirely on your machine. The canvas server listens on `127.0.0.1` only and refuses requests from other sites. Nothing is sent anywhere except through your own Claude Code sessions, including the ones the app starts for you. The list of your projects is kept in `~/.claude/loupe/projects.json`.
 
 ## Developing the UI
 

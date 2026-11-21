@@ -46,8 +46,29 @@ export type PickedElement = {
   kind: string; tag: string; id: string | null; selector: string; text: string | null; href: string | null;
   component: string | null; section: string | null; top: number; left: number; width: number; height: number; html: string;
 };
-export type ChatStatus = "live" | "listening" | "busy" | "idle" | "offline";
-export type ChatConn = { id: string; status: ChatStatus; live: boolean; listen?: boolean; session: string | null; label: string | null; last: number; connectedAt: number };
+export type ChatStatus = "live" | "listening" | "busy" | "idle" | "offline" | "starting";
+/** managed: a Claude Code session Loupe runs itself; name is its name in Loupe ("Claude 2") */
+export type ChatConn = { id: string; status: ChatStatus; live: boolean; listen?: boolean; session: string | null; label: string | null; last: number; connectedAt: number; managed?: boolean; name?: string | null };
+export type ManagedSession = {
+  id: string; label: string; state: "starting" | "idle" | "working" | "waiting"; claudeSession: string | null; startedAt: number;
+  error: string | null; prompt: string | null; views: string[]; cost: number; queue: number;
+};
+export type TranscriptEvent = { at: number } & (
+  | { kind: "started"; resumed: boolean }
+  | { kind: "stopped"; error: string | null }
+  | { kind: "note"; text: string }
+  | { kind: "user"; text: string; promptId: string | null; scope: string | null }
+  | { kind: "text"; text: string }
+  | { kind: "tool"; name: string; detail: string; toolId: string }
+  | { kind: "result"; toolId: string; error: boolean; text: string }
+  | { kind: "ask"; requestId: string; tool: string; detail: string }
+  | { kind: "answer"; requestId: string; allowed: boolean }
+  | { kind: "done"; error: boolean; text: string; ms?: number }
+);
+export type CanvasComment = {
+  id: string; at: number; status: "open" | "sent" | "resolved"; viewId: string; viewName: string; device: "desktop" | "mobile";
+  x: number; y: number; section: { index: number; name: string } | null; text: string; promptId?: string; reply?: string | null; resolvedAt?: number | null;
+};
 export type CanvasPrompt = {
   id: string; conn: string; session: string | null; text: string; scope: string;
   status: "queued" | "sending" | "delivered" | "done" | "failed" | "cancelled" | "concepts" | "findings";
@@ -60,7 +81,10 @@ export type CanvasPrompt = {
 export type PermissionRequest = { request_id: string; conn: string; tool_name: string; description: string; input_preview: string; at: number };
 export type ChatState = { conns: ChatConn[]; prompts: CanvasPrompt[]; permissions: PermissionRequest[] };
 export type Concept = { title: string; summary: string; css: string; replace: { selector: string; html: string }[] };
+export type ChangeShot = { before?: string; after?: string; h?: number; w?: number; device?: string };
 export type ChangelogEntry = {
-  id: string; at: number; endAt?: number; source: "canvas" | "chat"; prompt: string | null; detail?: string | null;
+  id: string; at: number; endAt?: number; source: "canvas" | "chat" | "loupe"; prompt: string | null; detail?: string | null;
   scope?: string; mode?: string; promptId?: string; summary: string | null; files: string[]; inProgress?: boolean;
+  /** Saved versions of the project before and after this change */
+  before?: string; after?: string; shots?: Record<string, ChangeShot>; undone?: number; kind?: "undo" | "restore"; undoOf?: string;
 };

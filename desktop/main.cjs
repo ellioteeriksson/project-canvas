@@ -2,7 +2,7 @@
 // opened Loupe in; each project's canvas opens in a tab of its own. The canvases are the same
 // local servers /loupe starts, so Claude Code sessions in those projects connect to them as usual,
 // and they keep running after you quit the app.
-const { app, BaseWindow, WebContentsView, Menu, dialog, ipcMain, nativeTheme, shell } = require("electron");
+const { app, BaseWindow, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, nativeTheme, shell } = require("electron");
 const path = require("node:path");
 const os = require("node:os");
 const { pathToFileURL } = require("node:url");
@@ -146,6 +146,24 @@ ipcMain.on("loupe:reveal", (_e, root) => typeof root === "string" && shell.openP
 ipcMain.handle("loupe:pick-folder", async () => {
   const res = await dialog.showOpenDialog(win, { title: "Add a project", buttonLabel: "Add project", properties: ["openDirectory"] });
   return res.canceled ? null : res.filePaths[0];
+});
+// Play: the site on its own, like a visitor sees it. Desktop fills the screen; mobile is a phone-sized window.
+let playWin = null;
+ipcMain.on("loupe:play", (_e, p) => {
+  if (!p || !LOCAL.test(p.url)) return;
+  if (playWin && !playWin.isDestroyed()) playWin.close();
+  const mobile = p.device === "mobile";
+  playWin = new BrowserWindow({
+    width: mobile ? 390 : 1440, height: mobile ? 844 : 900, title: p.title,
+    fullscreen: !mobile, backgroundColor: "#000000", autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  guard(playWin.webContents);
+  playWin.webContents.on("before-input-event", (e, input) => {
+    if (input.type === "keyDown" && input.key === "Escape" && !input.meta && !input.control) { e.preventDefault(); playWin?.close(); }
+  });
+  playWin.on("closed", () => { playWin = null; if (win) win.focus(); });
+  playWin.loadURL(p.url);
 });
 ipcMain.on("tabs:select", (_e, id) => select(id));
 ipcMain.on("tabs:close", (_e, id) => close(id));
