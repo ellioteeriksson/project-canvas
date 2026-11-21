@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Tabs</title>
+<style>
+  :root {
+    --bar: #dcdce1; --tab: #ececef; --ink: #1d1d1f; --muted: #6e6e76; --hover: rgba(0,0,0,.05); --line: rgba(0,0,0,.1);
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bar: #0f0f11; --tab: #1c1c1e; --ink: #f2f2f4; --muted: #9a9aa2; --hover: rgba(255,255,255,.06); --line: rgba(255,255,255,.1); }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 40px; overflow: hidden; background: var(--bar); font: 12.5px/1 -apple-system, BlinkMacSystemFont, "Geist", system-ui, sans-serif; color: var(--ink); user-select: none; -webkit-user-select: none; }
+  /* The empty bar moves the window; tabs are buttons */
+  .strip { height: 40px; display: flex; align-items: flex-end; gap: 2px; padding: 0 10px 0 84px; -webkit-app-region: drag; }
+  .tab { -webkit-app-region: no-drag; position: relative; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; border-radius: 9px 9px 0 0; color: var(--muted); background: transparent; border: 0; font: inherit; min-width: 0; flex: 0 1 220px; cursor: default; outline: none; }
+  .tab:hover { background: var(--hover); color: var(--ink); }
+  .tab[aria-selected="true"] { background: var(--tab); color: var(--ink); }
+  .tab:focus-visible { box-shadow: inset 0 0 0 2px #0a84ff; }
+  .tab.home { flex: 0 0 auto; padding: 0 12px; }
+  .tab .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
+  .tab:not(.home):not([aria-selected="true"]) + .tab:not([aria-selected="true"])::before { content: ""; position: absolute; left: -2px; top: 9px; bottom: 9px; width: 1px; background: var(--line); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .dot.live { background: #30d158; }
+  .dot.working { background: #0a84ff; animation: pulse 1.2s ease-in-out infinite; }
+  .dot.waiting { background: #ff9f0a; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .dot.working { animation: none; } }
+  .x { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 5px; border: 0; background: transparent; color: inherit; opacity: 0; padding: 0; }
+  .tab:hover .x, .tab[aria-selected="true"] .x, .x:focus-visible { opacity: .75; }
+  .x:hover { background: var(--hover); opacity: 1; }
+  .tab.dragging { opacity: .5; }
+  :root.fullscreen .strip { padding-left: 10px; }
+</style>
+</head>
+<body>
+<div class="strip" role="tablist" aria-label="Open projects" id="strip"></div>
+<script>
+const strip = document.getElementById("strip");
+let state = { active: "home", tabs: [] };
+let dragId = null;
+
+const GRID = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="1.7" y="1.7" width="5.3" height="5.3" rx="1.4"/><rect x="9" y="1.7" width="5.3" height="5.3" rx="1.4"/><rect x="1.7" y="9" width="5.3" height="5.3" rx="1.4"/><rect x="9" y="9" width="5.3" height="5.3" rx="1.4"/></svg>';
+const X = '<svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6"/></svg>';
+
+function render() {
+  strip.textContent = "";
+  state.tabs.forEach((t, i) => {
+    const b = document.createElement("div");
+    b.className = "tab" + (t.home ? " home" : "");
+    b.setAttribute("role", "tab");
+    b.tabIndex = 0;
+    b.setAttribute("aria-selected", String(t.id === state.active));
+    b.title = t.home ? "All projects (⌘1)" : t.id;
+    if (t.home) {
+      b.innerHTML = GRID;
+      b.setAttribute("aria-label", "Projects");
+    } else {
+      const dot = t.waiting ? "waiting" : t.working ? "working" : t.live ? "live" : "";
+      if (dot) { const d = document.createElement("span"); d.className = "dot " + dot; d.title = dot === "waiting" ? "Claude needs you" : dot === "working" ? "Claude is working" : "Claude connected"; b.append(d); }
+      const n = document.createElement("span"); n.className = "name"; n.textContent = t.title; b.append(n);
+      const x = document.createElement("button"); x.className = "x"; x.innerHTML = X; x.setAttribute("aria-label", "Close " + t.title); x.tabIndex = -1;
+      x.addEventListener("click", (e) => { e.stopPropagation(); window.tabs.close(t.id); });
+      b.append(x);
+      b.draggable = true;
+      b.addEventListener("dragstart", () => { dragId = t.id; b.classList.add("dragging"); });
+      b.addEventListener("dragend", () => { dragId = null; b.classList.remove("dragging"); });
+      b.addEventListener("dragover", (e) => { if (dragId && dragId !== t.id) e.preventDefault(); });
+      b.addEventListener("drop", (e) => { e.preventDefault(); if (dragId) window.tabs.move(dragId, i); });
+      b.addEventListener("auxclick", (e) => { if (e.button === 1) window.tabs.close(t.id); });
+    }
+    b.addEventListener("mousedown", (e) => { if (e.button === 0) window.tabs.select(t.id); });
+    b.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); window.tabs.select(t.id); }
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        const next = state.tabs[(i + (e.key === "ArrowRight" ? 1 : -1) + state.tabs.length) % state.tabs.length];
+        window.tabs.select(next.id);
+        setTimeout(() => strip.children[state.tabs.indexOf(next)]?.focus(), 30);
+      }
+    });
+    strip.append(b);
+  });
+}
+window.tabs.onState((s) => { state = s; render(); });
+window.tabs.onFullscreen((on) => document.documentElement.classList.toggle("fullscreen", on));
+</script>
+</body>
+</html>

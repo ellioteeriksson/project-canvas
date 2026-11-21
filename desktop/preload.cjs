@@ -2,7 +2,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("loupeShell", {
-  platform: process.platform,
+  // "tabbed": the window's traffic lights sit in the tab bar, so the page needs no room for them
+  platform: "tabbed",
   openProject: (p) => ipcRenderer.send("loupe:open-project", { url: String(p.url), root: String(p.root), name: String(p.name) }),
   showHome: () => ipcRenderer.send("loupe:show-home"),
   pickFolder: () => ipcRenderer.invoke("loupe:pick-folder"),

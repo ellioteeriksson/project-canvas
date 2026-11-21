@@ -1,81 +1,172 @@
-// Loupe for macOS: a home window with every project you've opened Loupe in, and one window per
-// project canvas. The canvases are the same local servers /loupe starts, so Claude Code sessions
-// in those projects connect to them as usual, and they keep running after you quit the app.
-const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, shell } = require("electron");
+// Loupe for macOS: one window with Figma-style tabs. The first tab lists every project you've
+// opened Loupe in; each project's canvas opens in a tab of its own. The canvases are the same
+// local servers /loupe starts, so Claude Code sessions in those projects connect to them as usual,
+// and they keep running after you quit the app.
+const { app, BaseWindow, WebContentsView, Menu, dialog, ipcMain, nativeTheme, shell } = require("electron");
 const path = require("node:path");
+const os = require("node:os");
 const { pathToFileURL } = require("node:url");
 
 const ROOT = app.isPackaged ? path.join(process.resourcesPath, "loupe") : path.resolve(__dirname, "..");
 const LOCAL = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/;
-
-let hubUrl = null;
-let homeWin = null;
-const projectWins = new Map(); // project root → window
+const BAR = 40; // tab bar height
 
 // Apps opened from the Dock get a bare PATH; the canvases need git and claude like in a terminal
-const home = require("node:os").homedir();
-process.env.PATH = [...new Set([...(process.env.PATH || "").split(":"), "/opt/homebrew/bin", "/usr/local/bin", `${home}/.local/bin`, `${home}/.claude/local`, "/usr/bin", "/bin"])].filter(Boolean).join(":");
+process.env.PATH = [...new Set([...(process.env.PATH || "").split(":"), "/opt/homebrew/bin", "/usr/local/bin", `${os.homedir()}/.local/bin`, `${os.homedir()}/.claude/local`, "/usr/bin", "/bin"])].filter(Boolean).join(":");
 
 if (!app.requestSingleInstanceLock()) app.quit();
-app.on("second-instance", () => showHome());
+app.on("second-instance", () => focusWindow());
+
+let hubUrl = null;
+let win = null;
+let bar = null;
+/** Open tabs, in order. The first is always Projects. */
+let tabs = [];
+let activeId = "home";
+let status = {};
 
 const background = () => (nativeTheme.shouldUseDarkColors ? "#1c1c1e" : "#ececef");
 
-function makeWindow(opts) {
-  const win = new BrowserWindow({
-    width: 1280, height: 820, minWidth: 880, minHeight: 560,
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 29, y: 33 },
-    backgroundColor: background(),
-    show: false,
-    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false },
-    ...opts,
-  });
-  win.once("ready-to-show", () => win.show());
-  // Our windows only ever show the local Loupe servers; everything else opens in your browser
-  win.webContents.setWindowOpenHandler(({ url }) => {
+function guard(wc) {
+  // Tabs only ever show the local Loupe servers; everything else opens in your browser
+  wc.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: "deny" };
   });
-  win.webContents.on("will-navigate", (e, url) => {
+  wc.on("will-navigate", (e, url) => {
     if (!LOCAL.test(url)) { e.preventDefault(); if (/^https?:/.test(url)) shell.openExternal(url); }
   });
-  return win;
 }
 
-function showHome() {
-  if (homeWin && !homeWin.isDestroyed()) { homeWin.show(); homeWin.focus(); return; }
-  if (!hubUrl) return;
-  homeWin = makeWindow({ width: 1180, height: 780, title: "Loupe" });
-  homeWin.loadURL(hubUrl);
-  homeWin.on("closed", () => { homeWin = null; });
+function makeView(url) {
+  const view = new WebContentsView({
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  view.setBackgroundColor(background());
+  guard(view.webContents);
+  view.webContents.loadURL(url);
+  return view;
+}
+
+function layout() {
+  if (!win) return;
+  const { width, height } = win.getContentBounds();
+  bar.setBounds({ x: 0, y: 0, width, height: BAR });
+  for (const t of tabs) t.view.setBounds({ x: 0, y: BAR, width, height: Math.max(0, height - BAR) });
+}
+
+function sendState() {
+  if (!bar) return;
+  bar.webContents.send("tabs", {
+    active: activeId,
+    tabs: tabs.map((t) => ({ id: t.id, title: t.title, home: t.id === "home", ...(status[t.id] || {}) })),
+  });
+}
+
+function select(id) {
+  const t = tabs.find((x) => x.id === id);
+  if (!t || !win) return;
+  activeId = id;
+  for (const x of tabs) x.view.setVisible(x.id === id);
+  t.view.webContents.focus();
+  win.setTitle(t.id === "home" ? "Loupe" : `${t.title} · Loupe`);
+  win.setRepresentedFilename?.(t.id === "home" ? "" : t.id);
+  sendState();
+}
+
+function close(id) {
+  if (id === "home") return;
+  const i = tabs.findIndex((x) => x.id === id);
+  if (i < 0) return;
+  const [t] = tabs.splice(i, 1);
+  win.contentView.removeChildView(t.view);
+  t.view.webContents.close();
+  if (activeId === id) select(tabs[Math.min(i, tabs.length - 1)].id);
+  else sendState();
 }
 
 function openProject({ url, root, name }) {
-  if (!LOCAL.test(url)) return;
-  const open = projectWins.get(root);
-  if (open && !open.isDestroyed()) {
-    if (!open.webContents.getURL().startsWith(url)) open.loadURL(url);
-    open.show(); open.focus();
-    return;
+  if (!LOCAL.test(url) || typeof root !== "string") return;
+  focusWindow();
+  const open = tabs.find((t) => t.id === root);
+  if (open) {
+    if (!open.view.webContents.getURL().startsWith(url)) open.view.webContents.loadURL(url);
+    return select(root);
   }
-  const win = makeWindow({ title: name });
-  win.setRepresentedFilename?.(root);
-  win.loadURL(url);
-  win.on("page-title-updated", (e) => { e.preventDefault(); win.setTitle(name); });
-  win.on("closed", () => projectWins.delete(root));
-  projectWins.set(root, win);
+  const view = makeView(url);
+  win.contentView.addChildView(view);
+  tabs.push({ id: root, title: name || path.basename(root), view });
+  layout();
+  select(root);
 }
 
-ipcMain.on("loupe:open-project", (_e, p) => p && typeof p.url === "string" && openProject(p));
-ipcMain.on("loupe:show-home", () => showHome());
-ipcMain.on("loupe:reveal", (_e, root) => typeof root === "string" && shell.openPath(root));
-ipcMain.handle("loupe:pick-folder", async (e) => {
-  const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), {
-    title: "Add a project", buttonLabel: "Add project", properties: ["openDirectory"],
+function createWindow() {
+  win = new BaseWindow({
+    width: 1320, height: 860, minWidth: 900, minHeight: 580,
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 14, y: 13 },
+    backgroundColor: background(),
+    title: "Loupe",
   });
+  bar = new WebContentsView({
+    webPreferences: { preload: path.join(__dirname, "tabbar-preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  bar.setBackgroundColor("#00000000");
+  bar.webContents.loadFile(path.join(__dirname, "tabbar.html"));
+  bar.webContents.on("did-finish-load", sendState);
+  win.contentView.addChildView(bar);
+
+  const home = makeView(hubUrl);
+  win.contentView.addChildView(home);
+  tabs = [{ id: "home", title: "Projects", view: home }];
+  layout();
+  select("home");
+
+  win.on("resize", layout);
+  win.on("enter-full-screen", () => bar?.webContents.send("fullscreen", true));
+  win.on("leave-full-screen", () => bar?.webContents.send("fullscreen", false));
+  win.on("closed", () => {
+    for (const t of tabs) try { t.view.webContents.close(); } catch {}
+    win = null; bar = null; tabs = [];
+  });
+}
+
+function focusWindow() {
+  if (!hubUrl) return;
+  if (!win) createWindow();
+  win.show(); win.focus();
+}
+
+const activeTab = () => tabs.find((t) => t.id === activeId);
+const step = (d) => { const i = tabs.findIndex((t) => t.id === activeId); if (i >= 0) select(tabs[(i + d + tabs.length) % tabs.length].id); };
+
+ipcMain.on("loupe:open-project", (_e, p) => p && typeof p.url === "string" && openProject(p));
+ipcMain.on("loupe:show-home", () => { focusWindow(); select("home"); });
+ipcMain.on("loupe:reveal", (_e, root) => typeof root === "string" && shell.openPath(root));
+ipcMain.handle("loupe:pick-folder", async () => {
+  const res = await dialog.showOpenDialog(win, { title: "Add a project", buttonLabel: "Add project", properties: ["openDirectory"] });
   return res.canceled ? null : res.filePaths[0];
 });
+ipcMain.on("tabs:select", (_e, id) => select(id));
+ipcMain.on("tabs:close", (_e, id) => close(id));
+ipcMain.on("tabs:move", (_e, { id, to }) => {
+  const i = tabs.findIndex((t) => t.id === id);
+  if (i < 1 || to < 1 || to >= tabs.length) return;
+  const [t] = tabs.splice(i, 1);
+  tabs.splice(to, 0, t);
+  sendState();
+});
+
+// Claude's status per project, for the dots on the tabs
+async function pollStatus() {
+  if (!hubUrl) return;
+  try {
+    const d = await fetch(`${hubUrl}/api/hub/projects`).then((r) => r.json());
+    const next = {};
+    for (const p of d.projects) next[p.root] = { working: p.working > 0, waiting: p.waiting > 0, live: p.live };
+    if (JSON.stringify(next) !== JSON.stringify(status)) { status = next; sendState(); }
+  } catch {}
+}
 
 function menu() {
   const dev = !app.isPackaged;
@@ -84,28 +175,39 @@ function menu() {
     {
       label: "File",
       submenu: [
-        { label: "Projects", accelerator: "CmdOrCtrl+1", click: showHome },
-        { label: "Add a Project…", accelerator: "CmdOrCtrl+O", click: async () => {
-          showHome();
-          homeWin?.webContents.executeJavaScript("window.dispatchEvent(new Event('loupe:add-project'))");
+        { label: "Projects", accelerator: "CmdOrCtrl+1", click: () => { focusWindow(); select("home"); } },
+        { label: "Add a Project…", accelerator: "CmdOrCtrl+O", click: () => {
+          focusWindow(); select("home");
+          tabs[0]?.view.webContents.executeJavaScript("window.dispatchEvent(new Event('loupe:add-project'))");
         } },
         { type: "separator" },
-        { role: "close" },
+        { label: "Close Tab", accelerator: "CmdOrCtrl+W", click: () => { if (activeId !== "home") close(activeId); else win?.close(); } },
       ],
     },
     { role: "editMenu" },
     {
       label: "View",
       submenu: [
-        { role: "reload" },
-        ...(dev ? [{ role: "toggleDevTools" }] : []),
-        { type: "separator" },
-        { role: "resetZoom" }, { role: "zoomIn" }, { role: "zoomOut" },
+        { label: "Reload", accelerator: "CmdOrCtrl+R", click: () => activeTab()?.view.webContents.reload() },
+        ...(dev ? [{ label: "Developer Tools", accelerator: "Alt+CmdOrCtrl+I", click: () => activeTab()?.view.webContents.toggleDevTools() }] : []),
         { type: "separator" },
         { role: "togglefullscreen" },
       ],
     },
-    { role: "windowMenu" },
+    {
+      label: "Window",
+      submenu: [
+        { role: "minimize" }, { role: "zoom" },
+        { type: "separator" },
+        { label: "Next Tab", accelerator: "Ctrl+Tab", click: () => step(1) },
+        { label: "Previous Tab", accelerator: "Ctrl+Shift+Tab", click: () => step(-1) },
+        { label: "Show Next Tab", accelerator: "CmdOrCtrl+Shift+]", visible: false, click: () => step(1) },
+        { label: "Show Previous Tab", accelerator: "CmdOrCtrl+Shift+[", visible: false, click: () => step(-1) },
+        ...[2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ label: `Tab ${n}`, accelerator: `CmdOrCtrl+${n}`, visible: false, click: () => tabs[n - 1] && select(tabs[n - 1].id) })),
+        { type: "separator" },
+        { role: "front" },
+      ],
+    },
     { role: "help", submenu: [{ label: "Loupe on GitHub", click: () => shell.openExternal("https://github.com/ellioteeriksson/loupe") }] },
   ]));
 }
@@ -120,9 +222,12 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
-  showHome();
-  app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) showHome(); });
+  createWindow();
+  setInterval(pollStatus, 3000);
+  pollStatus();
+  nativeTheme.on("updated", () => { for (const t of tabs) t.view.setBackgroundColor(background()); });
+  app.on("activate", () => focusWindow());
 });
 
-// The canvases keep serving Claude Code after the windows close; only the home server stops
+// The canvases keep serving Claude Code after the window closes
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
