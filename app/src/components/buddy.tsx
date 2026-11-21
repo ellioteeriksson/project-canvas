@@ -9,7 +9,7 @@ import type { CanvasHandle } from "@/components/canvas/canvas-view";
 import { LouFigure } from "@/components/lou";
 
 const NAME = "Lou";
-const SIZE = 64;
+const SIZE = 54;
 const CORNER = 20;
 const SEV = { error: "bg-[#ff3b30]", warning: "bg-[#ff9f0a]", info: "bg-muted-foreground/60" } as const;
 

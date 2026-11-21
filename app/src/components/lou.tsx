@@ -1,15 +1,25 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Lou, drawn and animated by hand: a matte violet sphere with pill eyes, a small mouth and floating
- * mitts. He moves like an old cartoon (anticipation, lean, drag, a short smear, a jelly landing),
- * and his hands trail behind him. Everything runs in one animation loop that writes SVG attributes
- * directly, so React doesn't re-render 60 times a second.
+ * Lou, a little magenta clay figure with a built-in monocle: one bead eye, one eye behind an orange
+ * clay monocle on a swinging chain, a rolled-clay brow and mouth, and round clay mitts.
+ *
+ * He moves like an old cartoon (anticipation, lean, drag, a jelly landing) and is shot like stop
+ * motion: the physics runs every frame, but he is redrawn 12 times a second and the clay surface
+ * shifts a little on every redraw. When he inspects a view he raises a mitt to the monocle, leans
+ * in, lifts his brow and the eye behind the glass grows. One animation loop writes SVG attributes
+ * directly, so React doesn't re-render all the time.
  */
 export type LouMode = "idle" | "inspecting" | "happy" | "concerned";
 
-const COLOR = { base: "#7B5CFF", light: "#A08BFF", dark: "#5536D6", mitt: "#8F74FF" };
-const HIT = 64; // the clickable area around his body
+const C = {
+  light: "#FF8CC4", base: "#F2559F", dark: "#C93A7F", mitt: "#F766A9", ink: "#4A0E2B",
+  pupil: "#1a0b12", monocle: "#E8834F", glass: "#EDEBE6",
+};
+const FPS = 12; // stop motion
+const SCALE = 0.78; // drawn at 150 units, shown smaller
+const HIT = 54; // the clickable area around his body
+const R = 34; // body radius in drawing units
 const N = 14; // points on his outline
 
 type V = { x: number; y: number };
@@ -22,8 +32,8 @@ function outline(sp: number, dir: number, wob: number, ph: number) {
   for (let i = 0; i < N; i++) {
     const th = (i / N) * Math.PI * 2;
     const a = Math.cos(th - dir); // 1 = leading side, -1 = trailing side
-    let r = 30 * (1 - 0.07 * sp * Math.max(0, a)) * (1 + 0.18 * sp * Math.max(0, -a));
-    r += Math.sin(3 * th + ph) * wob * 2.4 + Math.sin(2 * th - ph * 1.3) * wob * 1.2;
+    let r = R * (1 - 0.07 * sp * Math.max(0, a)) * (1 + 0.18 * sp * Math.max(0, -a));
+    r += Math.sin(3 * th + ph) * wob * 2.6 + Math.sin(2 * th - ph * 1.3) * wob * 1.2;
     const drag = sp * Math.max(0, -a) * 5; // the back of him lags behind
     pts.push([Math.cos(th) * r - dx * drag, Math.sin(th) * r - dy * drag]);
   }
@@ -36,7 +46,7 @@ function outline(sp: number, dir: number, wob: number, ph: number) {
 }
 
 export function LouFigure({ to, mode, wave, label, onClick, expanded, children, bubbleRef, right, bottom }: {
-  /** Where he should be, as an offset from his home in the corner */
+  /** Where he should be, as an offset from his home in the corner (screen pixels) */
   to: V;
   mode: LouMode;
   /** Bump this number to make him wave */
@@ -58,19 +68,23 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
 
   useEffect(() => {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Positions are in screen pixels; offsets inside his drawing are in drawing units
+    const u = 1 / SCALE;
     const S = {
-      pos: { ...live.current.to }, goal: { ...live.current.to }, move: null as null | { t: number; ant: number; dur: number; from: V; to: V; lift: number },
-      sx: 1, sy: 1, vsx: 0, vsy: 0, lean: 0, vlean: 0, fx: 0, fy: 0, vfx: 0, vfy: 0, wob: 0, ph: 0, o: 0, dir: 0,
+      pos: { ...live.current.to }, goal: { ...live.current.to },
+      move: null as null | { t: number; ant: number; dur: number; from: V; to: V; lift: number },
+      sx: 1, sy: 1, vsx: 0, vsy: 0, lean: 0, vlean: 0, fx: 0, fy: 0, vfx: 0, vfy: 0, wob: 0, ph: 0, o: 0, dir: 0, sp: 0, air: 0,
+      chain: 0, vchain: 0, zoom: 0,
       look: { x: 0, y: 0 }, lookT: { x: 0, y: 0 }, nextLook: 0, blink: 1, nextBlink: 2, t: 0,
-      wave: live.current.wave, waveUntil: 0, loupe: 0,
-      hands: [{ x: -38, y: 8, vx: 0, vy: 0, r: 0 }, { x: 38, y: 8, vx: 0, vy: 0, r: 0 }],
-      hist: [] as V[], mouse: null as V | null,
+      wave: live.current.wave, waveUntil: 0,
+      hands: [{ x: -46, y: 12, vx: 0, vy: 0, r: 0 }, { x: 46, y: 12, vx: 0, vy: 0, r: 0 }],
+      mouse: null as V | null,
     };
-    // hands live in screen space so they lag behind the body
-    S.hands.forEach((h) => { h.x += S.pos.x; h.y += S.pos.y; });
+    // hands live in screen space (drawing units) so they lag behind the body
+    S.hands.forEach((h) => { h.x += S.pos.x * u; h.y += S.pos.y * u; });
     const onMove = (e: PointerEvent) => { S.mouse = { x: e.clientX, y: e.clientY }; };
     window.addEventListener("pointermove", onMove);
-    let raf = 0, last = performance.now();
+    let raf = 0, last = performance.now(), acc = 1, seed = 3;
 
     const frame = (now: number) => {
       const dt = Math.min(0.033, (now - last) / 1000);
@@ -84,50 +98,53 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
         S.goal = { ...L.to };
         const dist = Math.hypot(S.goal.x - S.pos.x, S.goal.y - S.pos.y);
         if (reduced) S.pos = { ...S.goal };
-        else S.move = { t: 0, ant: 0.18, dur: Math.min(1.1, Math.max(0.55, dist / 900)), from: { ...S.pos }, to: { ...S.goal }, lift: Math.min(40, dist * 0.12) };
+        else S.move = { t: 0, ant: 0.2, dur: Math.min(1.15, Math.max(0.6, dist / 900)), from: { ...S.pos }, to: { ...S.goal }, lift: Math.min(32, dist * 0.1) };
       }
 
-      let tx = 1, ty = 1, tl = 0, sp = 0, air = 0;
+      let tx = 1, ty = 1, tl = 0;
+      S.air = 0;
       const prev = { ...S.pos };
       if (S.move) {
         const m = S.move;
         m.t += dt;
         S.dir = Math.atan2(m.to.y - m.from.y, m.to.x - m.from.x);
         const cx = Math.cos(S.dir);
-        if (m.t < m.ant) { tx = 1.15; ty = 0.87; tl = 0.12 * Math.sign(cx); } // gathering himself
+        if (m.t < m.ant) { tx = 1.16; ty = 0.86; tl = 0.12 * Math.sign(cx); } // gathering himself
         else {
-          const u = Math.min(1, (m.t - m.ant) / m.dur), e = ease(u);
-          air = Math.sin(Math.PI * u);
-          S.pos = { x: lerp(m.from.x, m.to.x, e), y: lerp(m.from.y, m.to.y, e) - air * m.lift };
-          if (u >= 1) {
+          const k = Math.min(1, (m.t - m.ant) / m.dur), e = ease(k);
+          S.air = Math.sin(Math.PI * k);
+          S.pos = { x: lerp(m.from.x, m.to.x, e), y: lerp(m.from.y, m.to.y, e) - S.air * m.lift };
+          if (k >= 1) {
             S.move = null;
             S.pos = { ...m.to };
-            S.vsy -= 2.6; S.vsx += 2.2; S.wob = 1.2; S.vlean += 3 * Math.sign(cx); S.vfx += 60 * Math.sign(cx);
+            S.vsy -= 2.8; S.vsx += 2.3; S.wob = 1.2; S.vlean += 3 * Math.sign(cx); S.vfx += 60 * Math.sign(cx); S.vchain += 80 * Math.sign(cx);
             S.hands.forEach((h) => { h.vx += cx * 120; h.vy -= 50; });
           }
         }
       }
-      const vx = (S.pos.x - prev.x) / dt, vy = (S.pos.y - prev.y) / dt;
-      sp = reduced ? 0 : Math.min(1, Math.hypot(vx, vy) / 700);
-      if (sp > 0.02) {
-        const ax = Math.abs(Math.cos(S.dir)), ay = Math.abs(Math.sin(S.dir)), st = sp * 0.15;
+      const vx = ((S.pos.x - prev.x) / dt) * u, vy = ((S.pos.y - prev.y) / dt) * u;
+      S.sp = reduced ? 0 : Math.min(1, Math.hypot(vx, vy) / 800);
+      if (S.sp > 0.02) {
+        const ax = Math.abs(Math.cos(S.dir)), ay = Math.abs(Math.sin(S.dir)), st = S.sp * 0.15;
         tx = 1 + st * ax - st * 0.5 * ay;
         ty = 1 + st * ay - st * 0.5 * ax;
-        tl = -0.36 * sp * Math.cos(S.dir);
+        tl = -0.32 * S.sp * Math.cos(S.dir);
       }
-      // springs: squash and stretch, lean, face lag
-      S.vsx += (-(S.sx - tx) * 170 - S.vsx * 11) * dt; S.vsy += (-(S.sy - ty) * 170 - S.vsy * 11) * dt;
+      // springs: squash and stretch, lean, face lag, the monocle chain
+      S.vsx += (-(S.sx - tx) * 160 - S.vsx * 10) * dt; S.vsy += (-(S.sy - ty) * 160 - S.vsy * 10) * dt;
       S.sx += S.vsx * dt; S.sy += S.vsy * dt;
-      S.vlean += (-(S.lean - tl) * 150 - S.vlean * 10) * dt; S.lean += S.vlean * dt;
-      S.vfx += (-(S.fx + vx * 0.008) * 140 - S.vfx * 9) * dt; S.fx += S.vfx * dt;
-      S.vfy += (-(S.fy + vy * 0.005) * 140 - S.vfy * 9) * dt; S.fy += S.vfy * dt;
+      S.vlean += (-(S.lean - tl) * 140 - S.vlean * 10) * dt; S.lean += S.vlean * dt;
+      S.vfx += (-(S.fx + vx * 0.007) * 140 - S.vfx * 9) * dt; S.fx += S.vfx * dt;
+      S.vfy += (-(S.fy + vy * 0.004) * 140 - S.vfy * 9) * dt; S.fy += S.vfy * dt;
+      S.vchain += (-(S.chain + vx * 0.018) * 60 - S.vchain * 4) * dt; S.chain += S.vchain * dt;
       S.wob *= Math.pow(0.04, dt); S.ph += dt * 16;
-      S.o = lerp(S.o, sp, 1 - Math.pow(0.004, dt));
+      S.o = lerp(S.o, S.sp, 1 - Math.pow(0.004, dt));
 
       // where he looks
       const inspecting = L.mode === "inspecting" && !S.move;
+      S.zoom = lerp(S.zoom, inspecting ? 1 : 0, 1 - Math.pow(0.01, dt));
       if (S.move) S.lookT = { x: Math.cos(S.dir), y: Math.sin(S.dir) * 0.6 };
-      else if (inspecting) S.lookT = { x: 0.75, y: 0.7 }; // looking into the lens
+      else if (inspecting) S.lookT = { x: 0.55, y: 0.6 };
       else if (S.t > S.nextLook) {
         const r = root.current?.getBoundingClientRect();
         const m = S.mouse;
@@ -142,66 +159,72 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
       }
       S.look.x = lerp(S.look.x, S.lookT.x, 1 - Math.pow(0.003, dt));
       S.look.y = lerp(S.look.y, S.lookT.y, 1 - Math.pow(0.003, dt));
-      if (S.t > S.nextBlink) { S.blink = lerp(S.blink, 0.1, 0.6); if (S.t > S.nextBlink + 0.12) S.nextBlink = S.t + 2.8 + Math.random() * 3.6; }
+      if (S.t > S.nextBlink) { S.blink = 0.12; if (S.t > S.nextBlink + 0.12) S.nextBlink = S.t + 2.8 + Math.random() * 3.6; }
       else S.blink = lerp(S.blink, 1, 0.4);
 
-      // hands: each springs toward its spot next to him, in screen space, so it trails behind
+      // hands: each springs toward its spot next to him, so it trails behind when he moves
       const waving = S.t < S.waveUntil && !S.move;
       const bob = (i: number) => Math.sin(S.t * 2 + i) * 2;
       const spots = [
-        { x: -38, y: 8 + bob(0), r: 0 },
-        waving ? { x: 36, y: -20 + Math.sin(S.t * 9) * 2, r: Math.sin(S.t * 9) * 28 - 10 }
-          : inspecting ? { x: 22, y: 14, r: Math.sin(S.t * 1.6) * 4 } : { x: 38, y: 8 + bob(1), r: 0 },
+        { x: -46, y: 12 + bob(0), r: 0 },
+        waving ? { x: 44, y: -24 + Math.sin(S.t * 9) * 2, r: Math.sin(S.t * 9) * 28 - 10 }
+          : inspecting ? { x: 35, y: -3, r: -20 } // a mitt at the monocle rim
+          : { x: 46, y: 12 + bob(1), r: 0 },
       ];
-      S.loupe = lerp(S.loupe, inspecting ? 1 : 0, 1 - Math.pow(0.002, dt));
+      const px = S.pos.x * u, py = S.pos.y * u;
       S.hands.forEach((h, i) => {
         const T = spots[i];
-        const gx = S.pos.x + T.x, gy = S.pos.y + T.y;
+        const gx = px + T.x, gy = py + T.y;
         if (reduced) { h.x = gx; h.y = gy; h.r = T.r; return; }
         h.vx += (-(h.x - gx) * 110 - h.vx * 8) * dt; h.vy += (-(h.y - gy) * 110 - h.vy * 8) * dt;
         h.x += h.vx * dt; h.y += h.vy * dt;
-        h.r = lerp(h.r, T.r - (S.move ? Math.cos(S.dir) * sp * 25 : 0), 1 - Math.pow(0.001, dt));
-        // never drift too far from him
-        const lx = h.x - S.pos.x, ly = h.y - S.pos.y, d = Math.hypot(lx, ly);
-        if (d > 62) { h.x = S.pos.x + (lx / d) * 62; h.y = S.pos.y + (ly / d) * 62; }
+        h.r = lerp(h.r, T.r - (S.move ? Math.cos(S.dir) * S.sp * 25 : 0), 1 - Math.pow(0.001, dt));
+        const lx = h.x - px, ly = h.y - py, d = Math.hypot(lx, ly);
+        if (d > 68) { h.x = px + (lx / d) * 68; h.y = py + (ly / d) * 68; }
       });
 
-      /* ---- write to the SVG ---- */
-      const path = outline(sp, S.dir, S.wob, S.ph);
-      E.body?.setAttribute("d", path);
-      S.hist.unshift({ ...S.pos });
-      S.hist.length = 7;
-      ([["g1", 3, 0.16], ["g2", 6, 0.07]] as const).forEach(([k, n, op]) => {
-        const g = E[k], h = S.hist[n];
-        if (!g) return;
-        if (h && sp > 0.4) { g.setAttribute("d", path); g.setAttribute("opacity", String(op * sp)); g.setAttribute("transform", `translate(${h.x - S.pos.x} ${h.y - S.pos.y})`); }
-        else g.setAttribute("opacity", "0");
-      });
-      const hh = 15 * S.blink, wrap = 1 - Math.abs(S.look.x) * 0.25;
-      const ex = S.look.x * 7 + S.fx, ey = -4 + S.look.y * 4 + S.fy - hh / 2;
-      for (const [k, x0] of [["e1", -12], ["e2", 5]] as const) {
-        const e = E[k];
-        if (!e) continue;
-        e.setAttribute("x", String(x0 * wrap + ex)); e.setAttribute("y", String(ey));
-        e.setAttribute("width", String(7 * wrap)); e.setAttribute("height", String(Math.max(hh, 1.5)));
+      /* ---- write to the SVG, 12 times a second, like stop motion ---- */
+      acc += dt;
+      if (acc < 1 / FPS) { raf = requestAnimationFrame(frame); return; }
+      acc = 0;
+      if (!reduced) {
+        // the clay is never quite still between frames
+        seed = (seed % 40) + 1;
+        E.tb?.setAttribute("seed", String(seed));
+        E.tb2?.setAttribute("seed", String(seed + 9));
       }
-      const mx = ex * 0.9, my = 10 + S.look.y * 3 + S.fy * 0.6, mw = 5.5 * wrap;
+      E.body?.setAttribute("d", outline(S.sp, S.dir, S.wob, S.ph));
+      const ex = S.look.x * 7 + S.fx, ey = S.look.y * 4 + S.fy;
+      E.bead?.setAttribute("transform", `translate(${(-12 + ex).toFixed(2)} ${(-6 + ey).toFixed(2)}) scale(1 ${S.blink.toFixed(2)})`);
+      E.mono?.setAttribute("transform", `translate(${(13 + ex).toFixed(2)} ${(-7 + ey).toFixed(2)})`);
+      const z = 1 + S.zoom * 0.22;
+      E.pupil?.setAttribute("rx", (7.2 * z).toFixed(2));
+      E.pupil?.setAttribute("ry", (7.2 * z * Math.max(0.12, S.blink)).toFixed(2));
+      E.pupil?.setAttribute("cx", (S.look.x * 2).toFixed(2));
+      E.pupil?.setAttribute("cy", (S.look.y * 2).toFixed(2));
+      E.glint?.setAttribute("cx", (2.4 + S.look.x * 2).toFixed(2));
+      E.glint?.setAttribute("cy", (-2.4 + S.look.y * 2).toFixed(2));
+      const lift = inspecting ? 3 : waving || L.mode === "happy" ? 2.5 : 0;
+      const bx = -12 + ex, by = -15 + ey - lift;
+      E.brow?.setAttribute("d",
+        L.mode === "concerned" ? `M${bx - 6} ${by - 1} Q${bx} ${by - 2} ${bx + 6} ${by + 2}`
+        : `M${bx - 6} ${by + 1} Q${bx} ${by - (inspecting ? 4 : 2.5)} ${bx + 6} ${by + (inspecting ? -1 : 1)}`);
+      const c0x = 13 + ex + 9, c0y = -7 + ey + 9;
+      E.chain?.setAttribute("d", `M${c0x.toFixed(2)} ${c0y.toFixed(2)} Q${(c0x + 6 + S.chain).toFixed(2)} ${(c0y + 16).toFixed(2)} 26 22`);
+      const mx = ex * 0.9, my = 14 + ey * 0.6;
       E.mouth?.setAttribute("d",
-        S.o > 0.25 ? `M${mx - 2.6} ${my} a2.6 ${2 + S.o * 1.6} 0 1 0 5.2 0 a2.6 ${2 + S.o * 1.6} 0 1 0 -5.2 0`
-        : L.mode === "concerned" ? `M${mx - 4.5} ${my + 2} Q${mx} ${my - 0.8} ${mx + 4.5} ${my + 2}`
-        : L.mode === "happy" || waving ? `M${mx - 6} ${my - 1} Q${mx} ${my + 5.4} ${mx + 6} ${my - 1}`
-        : `M${mx - mw} ${my} Q${mx} ${my + 3.6} ${mx + mw} ${my}`);
-      E.bd?.setAttribute("transform", `translate(0 30) skewX(${(S.lean * 57.3).toFixed(2)}) scale(${S.sx.toFixed(3)} ${S.sy.toFixed(3)}) translate(0 -30)`);
-      E.shadow?.setAttribute("rx", String(24 * (1 - air * 0.35)));
-      E.shadow?.setAttribute("opacity", String((document.documentElement.classList.contains("dark") ? 0.45 : 0.14) * (1 - air * 0.4)));
-      E.shadow?.setAttribute("transform", `translate(0 ${air * (S.move?.lift ?? 0)})`);
+        S.o > 0.25 ? `M${mx - 3} ${my} a3 ${2.4 + S.o * 2} 0 1 0 6 0 a3 ${2.4 + S.o * 2} 0 1 0 -6 0`
+        : L.mode === "concerned" ? `M${mx - 5} ${my + 2} Q${mx} ${my - 1} ${mx + 5} ${my + 2}`
+        : waving || L.mode === "happy" ? `M${mx - 7} ${my - 1} Q${mx} ${my + 6} ${mx + 7} ${my - 1}`
+        : inspecting ? `M${mx - 4} ${my + 1} Q${mx + 1} ${my + 3} ${mx + 5} ${my}`
+        : `M${mx - 6} ${my} Q${mx} ${my + 4} ${mx + 6} ${my}`);
+      E.bd?.setAttribute("transform", `translate(0 ${R}) skewX(${(S.lean * 57.3 + (inspecting ? -4 : 0)).toFixed(2)}) scale(${S.sx.toFixed(3)} ${S.sy.toFixed(3)}) translate(0 ${-R})`);
+      E.shadow?.setAttribute("rx", String(30 * (1 - S.air * 0.35)));
+      E.shadow?.setAttribute("opacity", String((document.documentElement.classList.contains("dark") ? 0.55 : 0.22) * (1 - S.air * 0.4)));
+      E.shadow?.setAttribute("transform", `translate(0 ${S.air * (S.move?.lift ?? 0) * u})`);
       S.hands.forEach((h, i) => {
-        E[`h${i}`]?.setAttribute("transform", `translate(${(h.x - S.pos.x).toFixed(2)} ${(h.y - S.pos.y).toFixed(2)}) rotate(${h.r.toFixed(1)}) scale(${i ? 1 : -1} 1)`);
+        E[`h${i}`]?.setAttribute("transform", `translate(${(h.x - px).toFixed(2)} ${(h.y - py).toFixed(2)}) rotate(${h.r.toFixed(1)})`);
       });
-      for (const k of ["handle", "lens"]) {
-        E[k]?.setAttribute("opacity", S.loupe.toFixed(2));
-        E[k]?.setAttribute("transform", `scale(${(0.4 + S.loupe * 0.6).toFixed(2)})`);
-      }
       const tr = `translate(${S.pos.x.toFixed(1)}px, ${S.pos.y.toFixed(1)}px)`;
       if (root.current) root.current.style.transform = tr;
       if (bubbleRef?.current) bubbleRef.current.style.transform = tr;
@@ -211,21 +234,8 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
     return () => { cancelAnimationFrame(raf); window.removeEventListener("pointermove", onMove); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Plain mitts, no thumbs. The right one grips the loupe: handle behind the mitt, lens out in front.
-  const mitt = (k: string) => (
-    <g ref={set(k)}>
-      {k === "h1" && (
-        <path ref={set("handle")} d="M-5 -5 L11 11" stroke="#d97757" strokeWidth="4.4" strokeLinecap="round" opacity="0" />
-      )}
-      <ellipse rx="7.5" ry="6.8" fill={COLOR.mitt} stroke={COLOR.dark} strokeOpacity=".6" strokeWidth="1.1" />
-      {k === "h1" && (
-        <g ref={set("lens")} opacity="0">
-          <circle cx="20" cy="20" r="11.5" fill="rgba(255,255,255,.28)" stroke="#f5f5f7" strokeWidth="2.8" />
-          <path d="M14.5 15.5a7 7 0 0 1 5.5 -3.5" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-        </g>
-      )}
-    </g>
-  );
+  const mitt = (k: string) => <g ref={set(k)}><ellipse rx="9.5" ry="8.8" fill={C.mitt} /></g>;
+  const px = Math.round(150 * SCALE);
 
   return (
     <button
@@ -237,25 +247,51 @@ export function LouFigure({ to, mode, wave, label, onClick, expanded, children, 
       className="absolute z-40 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       style={{ right, bottom, width: HIT, height: HIT }}
     >
-      <svg viewBox="-70 -70 140 140" width="140" height="140" aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 overflow-visible">
+      <svg viewBox="-75 -75 150 150" width={px} height={px} aria-hidden className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 overflow-visible">
         <defs>
-          <radialGradient id="lou-shade" cx="36%" cy="30%" r="78%">
-            <stop offset="0" stopColor={COLOR.light} />
-            <stop offset=".55" stopColor={COLOR.base} />
-            <stop offset="1" stopColor={COLOR.dark} />
+          <radialGradient id="lou-shade" cx="38%" cy="30%" r="76%">
+            <stop offset="0" stopColor={C.light} />
+            <stop offset=".68" stopColor={C.base} />
+            <stop offset="1" stopColor={C.dark} />
           </radialGradient>
+          {/* lumpy, hand-pressed edges */}
+          <filter id="lou-lump" x="-30%" y="-30%" width="160%" height="160%">
+            <feTurbulence ref={set("tb")} type="fractalNoise" baseFrequency=".045" numOctaves="2" seed="3" result="w" />
+            <feDisplacementMap in="SourceGraphic" in2="w" scale="4" />
+          </filter>
+          {/* the fine grain of the clay surface */}
+          <filter id="lou-skin" x="-20%" y="-20%" width="140%" height="140%">
+            <feTurbulence ref={set("tb2")} type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="12" result="n" />
+            <feColorMatrix in="n" type="saturate" values="0" />
+            <feComponentTransfer><feFuncA type="table" tableValues="0 .2" /></feComponentTransfer>
+            <feComposite in2="SourceGraphic" operator="in" />
+            <feBlend in="SourceGraphic" mode="multiply" />
+          </filter>
+          <filter id="lou-soft"><feGaussianBlur stdDeviation="3.5" /></filter>
         </defs>
-        <ellipse ref={set("shadow")} cx="0" cy="34" rx="24" ry="4.5" fill="#000" opacity=".14" />
-        <path ref={set("g2")} fill={COLOR.base} opacity="0" />
-        <path ref={set("g1")} fill={COLOR.base} opacity="0" />
-        {mitt("h0")}
-        <g ref={set("bd")}>
-          <path ref={set("body")} fill="url(#lou-shade)" d="M30 0A30 30 0 1 1 -30 0A30 30 0 1 1 30 0Z" />
-          <rect ref={set("e1")} x="-12" y="-11.5" width="7" height="15" rx="3.5" fill="#fff" />
-          <rect ref={set("e2")} x="5" y="-11.5" width="7" height="15" rx="3.5" fill="#fff" />
-          <path ref={set("mouth")} d="M-5.5 10 Q0 13.6 5.5 10" fill="none" stroke="#1d1d1f" strokeOpacity=".75" strokeWidth="2.2" strokeLinecap="round" />
+        <ellipse ref={set("shadow")} cx="0" cy="40" rx="30" ry="6" fill="#000" opacity=".22" filter="url(#lou-soft)" />
+        <g filter="url(#lou-skin)">
+          <g filter="url(#lou-lump)">
+            {mitt("h0")}
+            <g ref={set("bd")}>
+              <path ref={set("body")} fill="url(#lou-shade)" d={`M${R} 0A${R} ${R} 0 1 1 ${-R} 0A${R} ${R} 0 1 1 ${R} 0Z`} />
+              <path ref={set("chain")} d="M22 2 Q28 18 26 22" fill="none" stroke={C.monocle} strokeWidth="1.8" strokeLinecap="round" />
+              <path ref={set("brow")} d="M-18 -14 Q-12 -17.5 -6 -14" fill="none" stroke={C.dark} strokeWidth="3.6" strokeLinecap="round" />
+              <g ref={set("bead")} transform="translate(-12 -6)">
+                <circle r="4.8" fill={C.pupil} />
+                <circle cx="1.4" cy="-1.4" r="1.35" fill="#fff" />
+              </g>
+              <g ref={set("mono")} transform="translate(13 -7)">
+                <circle r="12.5" fill={C.glass} fillOpacity=".6" />
+                <ellipse ref={set("pupil")} rx="7.2" ry="7.2" fill={C.pupil} />
+                <circle ref={set("glint")} cx="2.4" cy="-2.4" r="2.1" fill="#fff" />
+                <circle r="12.5" fill="none" stroke={C.monocle} strokeWidth="4.2" />
+              </g>
+              <path ref={set("mouth")} d="M-6 14 Q0 18 6 14" fill="none" stroke={C.ink} strokeWidth="3" strokeLinecap="round" />
+            </g>
+            {mitt("h1")}
+          </g>
         </g>
-        {mitt("h1")}
       </svg>
       {children}
     </button>
