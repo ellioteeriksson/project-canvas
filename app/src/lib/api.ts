@@ -14,6 +14,9 @@ export const api = {
   ship: (action: ShipAction, message: string) => post<ShipResult>("/api/git/ship", { action, message }),
   saveSnapshot: (s: { key: string; dataUrl: string; h: number; w: number; at: number; sections?: unknown[] }) => post("/api/snapshot", s),
   refreshSnapshots: () => post("/api/snapshots/refresh", {}),
+  /** A real browser screenshot taken by the server. Resolves to the HTTP status. */
+  renderSnapshot: (b: { viewId: string; device: string; layer: string; at: number }) =>
+    fetch("/api/snapshot/render", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.status).catch(() => 0),
   prompt: (text: string, conn?: string | null, mode: "direct" | "concepts" = "direct") => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/prompt", { text, conn, mode }),
   chooseConcept: (id: string, index: number, comment: string) => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/concepts/choose", { id, index, comment }),
   conceptsAgain: (id: string, comment: string) => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/concepts/again", { id, comment }),
@@ -23,6 +26,17 @@ export const api = {
   clearPrompts: () => post("/api/prompt/clear", {}),
   permission: (request_id: string, behavior: "allow" | "deny") => post("/api/permission", { request_id, behavior }),
 };
+
+/** How snapshots are taken: "browser" (sharp screenshots from the server) or "frame" (drawn in the canvas) */
+let engineP: Promise<"browser" | "frame"> | null = null;
+export function useSnapshotEngine() {
+  const [engine, setEngine] = useState<"browser" | "frame" | null>(null);
+  useEffect(() => {
+    engineP ??= fetch("/api/snapshot/engine").then((r) => r.json()).then((d) => (d.engine === "browser" ? "browser" : "frame")).catch(() => "frame" as const);
+    engineP.then(setEngine);
+  }, []);
+  return engine;
+}
 
 /** Live project data over Server-Sent Events. */
 export function useCanvasData() {

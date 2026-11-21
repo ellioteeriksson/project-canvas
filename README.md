@@ -154,6 +154,10 @@ The same problem on many pages is grouped into one finding. Lou only runs when y
 
 If something is missed, add it in `.canvas/config.json` (`views`, `framework`, `devUrl`, `params` for dynamic routes). The skill documents every key. Commit `config.json`. `state.json` and `manifest.json` are gitignored automatically.
 
+### Snapshots
+
+Frames show snapshots of each page until you interact with them. Loupe takes them as real screenshots in a headless Chrome, Edge, Brave or Chromium that's already on your computer, at 2× (3× for mobile), so they stay sharp when you zoom in. Wireframes are rendered the same way. With none of those browsers installed, it draws snapshots inside the canvas instead, at lower quality. Set `LOUPE_CHROME` to a browser's path to choose one.
+
 ## Privacy
 
 Loupe runs entirely on your machine. The canvas server listens on `127.0.0.1` only and refuses requests from other sites. Nothing is sent anywhere except through your own Claude Code session. The list of your projects is kept in `~/.claude/loupe/projects.json`.

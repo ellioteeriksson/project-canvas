@@ -9,10 +9,12 @@
 import { domToWebp } from "modern-screenshot";
 
 (() => {
-  if (window.__projectCanvasFrame || window.parent === window) return;
+  // Runs inside canvas frames, and top-level in the headless browser that takes snapshots
+  const SHOT = !!window.__LOUPE_SHOT__;
+  if (window.__projectCanvasFrame || (window.parent === window && !SHOT)) return;
   window.__projectCanvasFrame = true;
 
-  const post = (msg) => { try { window.parent.postMessage({ source: "project-canvas", ...msg }, "*"); } catch {} };
+  const post = (msg) => { if (SHOT) return; try { window.parent.postMessage({ source: "project-canvas", ...msg }, "*"); } catch {} };
   const VH = /(-?\d*\.?\d+)(?:d|s|l)?vh\b/g;
   let full = false;
   let wire = false;
@@ -596,6 +598,36 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     } catch (err) {
       post({ type: "audit-error", id: d.id, message: String(err?.message || err).slice(0, 300) });
     }
+  }
+
+  /**
+   * For the snapshot browser: get the page ready for a real screenshot. Viewport heights are
+   * frozen at the screen height (so the browser can then grow to the full page without 100vh
+   * sections growing with it), scroll-triggered content is revealed, and the sections are read.
+   */
+  if (SHOT) {
+    window.__loupeShot = {
+      async prepare({ wire: wireOn = false, minWait = 900 } = {}) {
+        await new Promise((r) => (document.readyState === "complete" ? r() : window.addEventListener("load", r, { once: true })));
+        await sleep(minWait); // intros and hydration
+        frozenVH = window.innerHeight;
+        freezeAll();
+        if (wireOn) setWire(true);
+        await settle();
+        await revealAll();
+        freezeAll(); // styles that arrived while scrolling
+        if (wireOn) setWire(true);
+        await settle();
+        for (const el of document.querySelectorAll("nextjs-portal, vite-error-overlay, astro-dev-toolbar, astro-dev-overlay, [data-project-canvas]")) el.remove();
+        const h = Math.min(Math.max(contentHeight(), window.innerHeight), 16000);
+        let sections = [];
+        try { sections = detectSections().map((x) => ({ ...x })); } catch {}
+        const bg = getComputedStyle(document.body || document.documentElement).backgroundColor;
+        return { h, sections, bg };
+      },
+      /** After the browser grew to the full height: late styles get frozen too */
+      async settleTall() { freezeAll(); window.scrollTo(0, 0); await settle(); return Math.min(Math.max(contentHeight(), frozenVH || 0), 16000); },
+    };
   }
 
   // Change the page only after the framework has hydrated it; earlier changes cause hydration errors

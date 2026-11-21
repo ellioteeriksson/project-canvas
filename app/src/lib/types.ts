@@ -40,7 +40,7 @@ export type Agent = {
 };
 export type EditEvent = { file: string | null; views: string[]; global: boolean; at: number };
 export type PageSection = { name: string; heading: string | null; tag: string; id: string | null; component: string | null; top: number; height: number };
-export type Snapshot = { file: string; at: number; h: number; w: number; sections?: PageSection[] };
+export type Snapshot = { file: string; at: number; h: number; w: number; sections?: PageSection[]; engine?: "browser" };
 export type SnapshotIndex = Record<string, Snapshot>;
 export type PickedElement = {
   kind: string; tag: string; id: string | null; selector: string; text: string | null; href: string | null;

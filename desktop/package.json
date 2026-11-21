@@ -1,7 +1,7 @@
 {
   "name": "loupe-desktop",
   "productName": "Loupe",
-  "version": "0.14.1",
+  "version": "0.15.0",
   "description": "Loupe for macOS: every project you've opened Loupe in, each canvas in a tab, connected to Claude Code.",
   "private": true,
   "main": "main.cjs",

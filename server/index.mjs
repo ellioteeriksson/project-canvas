@@ -18,6 +18,7 @@ import { createChannelHub } from "./channel.mjs";
 import { createChangelog } from "./changelog.mjs";
 import { buildScope } from "../scripts/scope.mjs";
 import { remember } from "./registry.mjs";
+import { createShooter } from "./shooter.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(HERE, "..", "app", "dist");
@@ -51,6 +52,7 @@ function pidAlive(pid) {
 let manifest = null;
 let lastSig = "";
 const snapshots = createSnapshotStore(ROOT);
+const shooter = createShooter({ log: (m) => console.log(`[loupe] ${m}`) });
 let refreshAt = 0; // "Refresh all snapshots" from settings
 let siteUrl = null; // static server for plain-HTML projects
 let proxyUrl = null; // frame proxy in front of the dev server
@@ -299,6 +301,30 @@ async function handle(req, res) {
       return send(res, 200, { ok: true });
     } catch (e) {
       return send(res, 400, { error: String(e.message) });
+    }
+  }
+  // Snapshots taken by a real browser in the background (sharp, 2×); the canvas falls back to
+  // drawing them in its frames when no browser is installed
+  if (p === "/api/snapshot/engine") return send(res, 200, { engine: shooter.available() ? "browser" : "frame", browser: shooter.browser });
+  if (p === "/api/snapshot/render" && req.method === "POST") {
+    const b = await readBody(req);
+    const view = manifest?.views.find((v) => v.id === b.viewId);
+    const base = manifest?.frameUrl || manifest?.devUrl;
+    if (!view?.url || !base) return send(res, 404, { error: "No page to capture" });
+    if (!shooter.available()) return send(res, 501, { error: "No browser for snapshots" });
+    const device = b.device === "mobile" ? "mobile" : "desktop";
+    const layer = b.layer === "wireframe" ? "wireframe" : "live";
+    const key = `${view.id}|${device}|${layer}`;
+    const at = Number(b.at) || Date.now();
+    try {
+      const shot = await shooter.shoot({ key, url: base.replace(/\/$/, "") + (view.url.startsWith("/") ? view.url : "/" + view.url), device, wire: layer === "wireframe" });
+      const entry = snapshots.put({ key, at, ...shot });
+      broadcast("snapshots", snapshots.index);
+      refreshSelection();
+      return send(res, 200, { ok: true, entry });
+    } catch (e) {
+      const msg = String(e?.message || e);
+      return send(res, msg === "superseded" ? 409 : 500, { error: msg });
     }
   }
   if (p === "/api/snapshots/refresh" && req.method === "POST") {

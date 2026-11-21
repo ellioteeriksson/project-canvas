@@ -3,7 +3,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Browser, DeviceMobile, FolderSimple, CursorClick, LinkBreak, WarningCircle, CircleNotch, Warning, Sparkle, ArrowClockwise, SelectionPlus } from "@phosphor-icons/react";
 import type { Agent } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { api, frameUrl, snapshotKey } from "@/lib/api";
+import { api, frameUrl, snapshotKey, useSnapshotEngine } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCanvas } from "./context";
@@ -44,6 +44,7 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
   const [failedFor, setFailedFor] = useState<string | null>(null);
   const [captureReady, setCaptureReady] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(0);
+  const [shotFailedFor, setShotFailedFor] = useState<string | null>(null);
   const { full, reportHeight, wire } = c;
 
   const agents = c.agentsByView.get(viewId) ?? [];
@@ -53,14 +54,21 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
   const snap = c.snapshots[key];
   const shown = snap ?? c.snapshots[snapshotKey(viewId, c.device, wire ? "live" : "wireframe")];
   const changed = Math.max(c.manifest.changedAt?.[viewId] ?? 0, c.manifest.changedAt?.["*"] ?? 0);
-  const stale = !snap || snap.at < changed;
+  // With the browser engine, snapshots drawn the old way (in the frame, 1×) are retaken once
+  const engineNow = useSnapshotEngine();
+  const stale = !snap || snap.at < changed || (engineNow === "browser" && snap.engine !== "browser" && shotFailedFor !== `${key}@${changed}`);
   const failed = failedFor === `${key}@${changed}`;
   const canLoad = !!v?.url && c.devUp !== false;
 
   const live = canLoad && (interactive || agentHere || failed);
   const wantCapture = canLoad && stale && !live;
   const mode = live ? "live" : "capture";
-  const needIframe = live || (wantCapture && captureReady);
+  // Sharp snapshots come from a browser the server runs; without one (or if it fails for this
+  // page) the snapshot is drawn inside the frame instead
+  const engine = engineNow;
+  const [shooting, setShooting] = useState<string | null>(null);
+  const viaServer = engine === "browser" && shotFailedFor !== `${key}@${changed}`;
+  const needIframe = live || (wantCapture && captureReady && engine !== null && !viaServer);
   const priority = interactive ? 100 : agentHere ? 50 : selected ? 10 : shown ? 0 : 5;
   const granted = useLoadSlot(viewId, priority, needIframe, `${c.reloadKey}:${frameKey}:${key}:${mode}`);
 
@@ -82,6 +90,17 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
     if (prevAt.current && snap?.at && snap.at > prevAt.current && Date.now() - edited < 90_000) setUpdatedAt(Date.now());
     prevAt.current = snap?.at;
   }, [snap?.at]);
+
+  useEffect(() => {
+    if (!(wantCapture && captureReady && viaServer)) return;
+    const token = `${key}@${changed}`;
+    if (shooting === token) return;
+    setShooting(token);
+    api.renderSnapshot({ viewId, device: c.device, layer, at: Date.now() }).then((status) => {
+      setShooting((t) => (t === token ? null : t));
+      if (status !== 200 && status !== 409) setShotFailedFor(token);
+    });
+  }, [wantCapture, captureReady, viaServer, key, changed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Capture: once the page is loaded and its helper is ready, ask it for a snapshot
   const helperReady = useRef(false);
@@ -171,7 +190,7 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
   const secSnap = [shown, c.snapshots[snapshotKey(viewId, c.device, "live")], c.snapshots[snapshotKey(viewId, c.device, "wireframe")]].find((x) => x?.sections?.length);
   const sections = secSnap?.sections ?? [];
   const showSections = c.activeViewId === viewId && !interactive && !picking && sections.length > 0;
-  const busy = needIframe && mode === "capture";
+  const busy = (needIframe && mode === "capture") || (!!shooting && wantCapture);
 
   return (
     <div className="group/frame relative" style={{ width: f.w, paddingTop: TITLE_H }}>
