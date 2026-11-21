@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SidebarSimple, TreeStructure, FlowArrow, Swatches, Rows, ClockCounterClockwise } from "@phosphor-icons/react";
 import { ChangelogView } from "@/components/changelog-view";
+import { Buddy } from "@/components/buddy";
+import type { Finding } from "@/lib/audit";
 import { useCanvasData, api } from "@/lib/api";
 import type { PickedElement } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -27,6 +29,8 @@ export default function App() {
   const [dsSection, setDsSection] = useState<DsSection>("tokens");
   const [sidebar, setSidebar] = useState(true);
   const [conceptId, setConceptId] = useState<string | null>(null);
+  const [findingCounts, setFindingCounts] = useState<Record<string, number>>({});
+  const [inspectingId, setInspectingId] = useState<string | null>(null);
   const canvas = useRef<CanvasHandle>(null);
   const selection = state.selection ?? null;
   const selectedId = selection?.id ?? null;
@@ -79,7 +83,7 @@ export default function App() {
         {/* The work fills the window; tools float above it */}
         <main className="absolute inset-0">
           {tab === "canvas" ? (
-            <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} agents={agents} edits={edits} snapshots={snapshots} selection={selection} onPickElements={pickElements} insetLeft={insetLeft} />
+            <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} agents={agents} edits={edits} snapshots={snapshots} selection={selection} onPickElements={pickElements} insetLeft={insetLeft} findingCounts={findingCounts} inspectingId={inspectingId} />
           ) : (
             <div className="absolute inset-0 pt-[68px]" style={{ paddingLeft: insetLeft }}>
               {tab === "sections" ? (
@@ -166,6 +170,23 @@ export default function App() {
           <SettingsPopover manifest={manifest} />
           <ShipButton git={git} onDone={refreshGit} />
         </div>
+
+        <Buddy
+          manifest={manifest}
+          chat={chat}
+          base={manifest.frameUrl || manifest.devUrl}
+          canvas={canvas}
+          tab={tab}
+          onCounts={setFindingCounts}
+          onInspecting={setInspectingId}
+          onShowView={(id) => { setTab("canvas"); select(id); setTimeout(() => canvas.current?.focus(id), 60); }}
+          onFix={async (f: Finding) => {
+            // Scope the fix to its page when it's about one page
+            await api.select(f.views.length === 1 ? { kind: "view", id: f.views[0] } : null);
+            const conn = chat.conns.find((c) => c.status !== "offline");
+            await api.prompt(f.fix, conn?.id ?? null, "direct");
+          }}
+        />
 
         {!connected && (
           <div role="status" className="island absolute top-[68px] left-1/2 z-30 -translate-x-1/2 px-3.5 py-2 text-muted-foreground">

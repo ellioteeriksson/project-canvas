@@ -23,7 +23,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
   try {
     prompts = JSON.parse(fs.readFileSync(file, "utf8")).prompts || [];
     // Chats from before a restart can't answer any more
-    for (const p of prompts) if (!["done", "failed", "cancelled", "concepts"].includes(p.status)) { p.status = "failed"; p.note = "The canvas restarted before Claude answered"; }
+    for (const p of prompts) if (!["done", "failed", "cancelled", "concepts", "findings"].includes(p.status)) { p.status = "failed"; p.note = "The canvas restarted before Claude answered"; }
   } catch {}
 
   /* ---------- helpers ---------- */
@@ -234,11 +234,11 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     ].join("\n");
   }
 
-  function createPrompt({ conn, text, mode = "direct", scope, body, parent }) {
+  function createPrompt({ conn, text, mode = "direct", scope, body, parent, tailOverride }) {
     const target = conn && conns.get(conn)?.res ? conn : defaultConn();
     if (!target) return { ok: false, error: "No Claude Code chat is open in this project" };
     const id = crypto.randomBytes(3).toString("hex");
-    const tail = mode === "concepts" ? conceptInstructions(id, scope.info) : REPLY(id);
+    const tail = tailOverride ? tailOverride(id) : mode === "concepts" ? conceptInstructions(id, scope.info) : REPLY(id);
     const full = [`<canvas-prompt prompt_id="${id}">`, body ?? text, `</canvas-prompt>`, "", scope.scope, "", typeof tail === "function" ? tail(id) : tail].join("\n");
     const p = {
       id, conn: target, session: conns.get(target)?.session || null, text, mode, parent: parent || null,
@@ -311,6 +311,37 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     return createPrompt({ conn: p.conn, text: note ? `${p.text} (new round: ${note})` : `${p.text} (new round)`, mode: "concepts", scope: { label: p.scope, scope: p.scopeText, info: p.info }, body, parent: p.id });
   }
 
+  /* ---------- helper buddy: checking the project against the house rules ---------- */
+  function rulesCheck({ conn, rules, views }) {
+    const text = String(rules || "").trim();
+    if (!text) return { ok: false, error: "There are no rules yet. Add some in the rules file first." };
+    const list = (Array.isArray(views) ? views : []).slice(0, 200).map((v) => `- ${v.name} (${v.route}${v.file ? `, ${v.file}` : ""})`).join("\n");
+    const body = [
+      `Check the whole project against the house rules below, and report what breaks them. Don't change any files.`,
+      "",
+      "Rules (.canvas/rules.md):",
+      text,
+      "",
+      list ? `Pages in the project:\n${list}` : null,
+    ].filter((x) => x !== null).join("\n");
+    const tail = (id) => [
+      `Read the code (and the rendered pages if you need to) for every page. Then call the canvas_findings tool once with prompt_id "${id}" and every rule that is broken: for each, the rule, a severity (error, warning or info), a short title, one or two sentences of detail, the route of the page (or null for the whole project), the file to change, and a one-sentence fix. Report each problem once, the most important first. If nothing breaks the rules, call canvas_findings with an empty list.`,
+    ].join("\n");
+    return createPrompt({ conn, text: "Check the project against the house rules", mode: "audit", scope: { label: "Whole project", scope: "", info: null }, body, tailOverride: tail });
+  }
+  function findings(connId, id, list) {
+    const p = prompts.find((x) => x.id === id);
+    if (!p) return { ok: false, error: `No canvas prompt with id ${id}` };
+    const str = (v, n) => (v == null ? null : String(v).slice(0, n));
+    p.findings = (Array.isArray(list) ? list : []).slice(0, 80).map((f) => ({
+      rule: str(f?.rule, 300), severity: ["error", "warning", "info"].includes(f?.severity) ? f.severity : "warning",
+      title: str(f?.title, 160) || "Rule not followed", detail: str(f?.detail, 800), route: str(f?.route, 300), file: str(f?.file, 300), fix: str(f?.fix, 600),
+    }));
+    Object.assign(p, { status: "findings", doneAt: now() });
+    changed();
+    return { ok: true };
+  }
+
   /* ---------- listening that survives the chat being used ---------- */
   function stopListening(connId) {
     const c = conns.get(connId);
@@ -335,7 +366,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     return { ok: true };
   }
   function clear() {
-    prompts = prompts.filter((p) => !["done", "failed", "cancelled"].includes(p.status) && !(p.status === "concepts" && p.chosen));
+    prompts = prompts.filter((p) => !["done", "failed", "cancelled", "findings"].includes(p.status) && !(p.status === "concepts" && p.chosen));
     changed();
     return { ok: true };
   }
@@ -345,5 +376,5 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     return [...conns.values()].filter((c) => c.session === session).map((c) => `conn:${c.id}`);
   }
 
-  return { connKeys, stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
+  return { rulesCheck, findings, connKeys, stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
 }

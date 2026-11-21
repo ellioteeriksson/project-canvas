@@ -29,6 +29,10 @@ export type CanvasCtx = {
   activeViewId: string | null;
   selectedSectionId: string | null;
   selectSection: (viewId: string, index: number | null) => void;
+  /** Open findings from the helper buddy, per view */
+  findingCounts: Record<string, number>;
+  /** The view the helper buddy is looking at right now */
+  inspectingId: string | null;
   setInteractive: (id: string | null) => void;
   rename: (id: string, name: string) => void;
   setParam: (route: string, url: string) => void;

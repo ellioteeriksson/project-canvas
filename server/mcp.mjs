@@ -148,6 +148,34 @@ const TOOLS = [
     },
   },
   {
+    name: "canvas_findings",
+    description: "Report the results of a Loupe rules check (a canvas prompt that asks you to check the project against its house rules). Don't change files for it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt_id: { type: "string" },
+        findings: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              rule: { type: "string", description: "The rule that is broken, as written in the rules file" },
+              severity: { type: "string", enum: ["error", "warning", "info"] },
+              title: { type: "string", description: "Short title of the problem" },
+              detail: { type: "string", description: "One or two sentences: what's wrong and where" },
+              route: { type: ["string", "null"], description: "Route of the page, or null for the whole project" },
+              file: { type: ["string", "null"], description: "File to change" },
+              fix: { type: "string", description: "One sentence: how to fix it" },
+            },
+            required: ["rule", "severity", "title"],
+          },
+        },
+      },
+      required: ["prompt_id", "findings"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "canvas_stop_listening",
     description: "Stop listening to Loupe, when the user asks you to. Prompts from the canvas then wait until the user writes in this chat.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -168,7 +196,7 @@ const TOOLS = [
 ];
 
 const textResult = (text, isError = false) => ({ content: [{ type: "text", text }], isError });
-const listenResult = (text) => textResult(`${text}\n\nWhen you've answered (canvas_reply or canvas_concepts), call canvas_wait again to keep listening to the canvas.`);
+const listenResult = (text) => textResult(`${text}\n\nWhen you've answered (canvas_reply, canvas_concepts or canvas_findings), call canvas_wait again to keep listening to the canvas.`);
 
 function finishWait(result) {
   if (!wait) return;
@@ -189,6 +217,11 @@ async function callTool(reqId, name, args, meta) {
     if (!canvasUrl) return write({ id: reqId, result: textResult("Loupe isn't running, so the concepts can't be shown. Tell the user to start it with /loupe.", true) });
     const r = await post("/api/channel/concepts", { id: String(args?.prompt_id || ""), concepts: args?.concepts });
     return write({ id: reqId, result: r.ok ? textResult("The concepts are in the canvas. Don't build anything yet: the user picks one there, and you'll get a follow-up prompt.") : textResult(r.error || "The canvas didn't accept the concepts.", true) });
+  }
+  if (name === "canvas_findings") {
+    if (!canvasUrl) return write({ id: reqId, result: textResult("Loupe isn't running, so the findings can't be shown. Tell the user in this chat instead.", true) });
+    const r = await post("/api/channel/findings", { id: String(args?.prompt_id || ""), findings: args?.findings });
+    return write({ id: reqId, result: r.ok ? textResult("The findings are in Loupe. Don't fix anything unless the user asks.") : textResult(r.error || "Loupe didn't accept the findings.", true) });
   }
   if (name === "canvas_stop_listening") {
     await post("/api/channel/stop-listening", {});

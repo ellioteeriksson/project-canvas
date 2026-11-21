@@ -186,3 +186,38 @@
 
 /* Floating islands over the canvas */
 .island { background: var(--chrome); border-radius: 16px; box-shadow: var(--island-shadow); }
+
+/* The view the helper buddy is inspecting */
+.frame-card.inspecting { box-shadow: 0 0 0 calc(2px * var(--title-scale, 1)) var(--buddy), 0 0 0 calc(8px * var(--title-scale, 1)) color-mix(in oklab, var(--buddy) 25%, transparent) !important; transition: box-shadow .3s; }
+:root { --buddy: #7c6cff; --buddy-2: #b49bff; }
+.dark { --buddy: #8f82ff; --buddy-2: #c2b2ff; }
+
+/* ---------- Lou, the helper buddy ---------- */
+.buddy { transition: transform 750ms cubic-bezier(.45, .05, .2, 1); will-change: transform; }
+.buddy-blob {
+  background: radial-gradient(circle at 34% 28%, color-mix(in oklab, #fff 55%, var(--buddy-2)) 0 14%, transparent 42%),
+    linear-gradient(150deg, var(--buddy-2), var(--buddy) 62%, color-mix(in oklab, var(--buddy) 80%, #1d1d1f));
+  box-shadow: inset 0 -5px 10px rgba(0, 0, 0, .14), 0 10px 24px -8px color-mix(in oklab, var(--buddy) 70%, transparent), 0 2px 6px rgba(0, 0, 0, .12);
+  border-radius: 48% 52% 46% 54% / 55% 50% 50% 45%;
+  animation: buddy-morph 7s ease-in-out infinite;
+}
+.buddy-body { animation: buddy-breathe 3.6s ease-in-out infinite; transform-origin: 50% 90%; }
+.buddy:hover .buddy-body { animation-duration: 1.8s; }
+.buddy.flying .buddy-body, .buddy-busy { animation: buddy-hover 1.2s ease-in-out infinite; }
+.buddy-loupe { opacity: 0; transform: translate(-6px, -4px) rotate(-30deg) scale(.4); transition: opacity .25s, transform .35s cubic-bezier(.3, 1.5, .5, 1); pointer-events: none; }
+.buddy-loupe.on { opacity: 1; transform: none; animation: buddy-peer 2.4s ease-in-out infinite; }
+.buddy-panel { animation: buddy-pop 220ms cubic-bezier(.2, .9, .3, 1.2); transform-origin: 100% 100%; }
+.buddy-bubble { animation: buddy-pop 220ms cubic-bezier(.2, .9, .3, 1.2); transform-origin: 100% 100%; transition: transform 750ms cubic-bezier(.45, .05, .2, 1); }
+@keyframes buddy-morph {
+  0%, 100% { border-radius: 48% 52% 46% 54% / 55% 50% 50% 45%; }
+  33% { border-radius: 54% 46% 52% 48% / 48% 55% 45% 52%; }
+  66% { border-radius: 46% 54% 50% 50% / 52% 46% 54% 48%; }
+}
+@keyframes buddy-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.035, .97); } }
+@keyframes buddy-hover { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-5px) rotate(3deg); } }
+@keyframes buddy-peer { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-10deg) translate(-2px, -2px); } }
+@keyframes buddy-pop { from { opacity: 0; transform: scale(.92) translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .buddy, .buddy-bubble { transition: none; }
+  .buddy-blob, .buddy-body, .buddy-loupe.on, .buddy-busy { animation: none !important; }
+}

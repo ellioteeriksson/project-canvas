@@ -48,8 +48,9 @@ export type ChatStatus = "live" | "listening" | "busy" | "idle" | "offline";
 export type ChatConn = { id: string; status: ChatStatus; live: boolean; listen?: boolean; session: string | null; label: string | null; last: number; connectedAt: number };
 export type CanvasPrompt = {
   id: string; conn: string; session: string | null; text: string; scope: string;
-  status: "queued" | "sending" | "delivered" | "done" | "failed" | "cancelled" | "concepts";
-  mode?: "direct" | "concepts" | "apply"; parent?: string | null; applied?: string;
+  status: "queued" | "sending" | "delivered" | "done" | "failed" | "cancelled" | "concepts" | "findings";
+  mode?: "direct" | "concepts" | "apply" | "audit";
+  findings?: { rule: string | null; severity: "error" | "warning" | "info"; title: string; detail: string | null; route: string | null; file: string | null; fix: string | null }[]; parent?: string | null; applied?: string;
   concepts?: Concept[]; chosen?: { index: number; comment: string | null; at: number };
   info?: { viewId: string; url: string; device: "desktop" | "mobile"; section: number | null; selectors: string[] } | null;
   via?: "live" | "listen" | "stop" | "prompt"; reply?: string; note?: string; at: number; deliveredAt?: number; doneAt?: number;

@@ -317,6 +317,7 @@ async function handle(req, res) {
       "/api/channel/permission": () => hub.permissionRequest(b.conn, b),
       "/api/channel/claim": () => hub.claim(b),
       "/api/channel/concepts": () => hub.concepts(b.conn, b.id, b.concepts),
+      "/api/channel/findings": () => hub.findings(b.conn, b.id, b.findings),
       "/api/channel/stop-listening": () => hub.stopListening(b.conn),
     }[p];
     return r ? send(res, 200, r()) : send(res, 404, { error: "unknown" });
@@ -327,6 +328,37 @@ async function handle(req, res) {
   if (req.method === "POST" && p === "/api/prompt/clear") return send(res, 200, hub.clear());
   if (req.method === "POST" && p === "/api/concepts/choose") { const r = hub.choose(await readBody(req)); return send(res, r.ok ? 200 : 400, r); }
   if (req.method === "POST" && p === "/api/concepts/again") { const r = hub.again(await readBody(req)); return send(res, r.ok ? 200 : 400, r); }
+  /* helper buddy: house rules and link checks */
+  if (p === "/api/rules" && req.method === "GET") {
+    const f = path.join(ROOT, ".canvas", "rules.md");
+    return send(res, 200, { exists: fs.existsSync(f), text: fs.existsSync(f) ? fs.readFileSync(f, "utf8") : "" });
+  }
+  if (p === "/api/rules" && req.method === "POST") {
+    const b = await readBody(req);
+    fs.mkdirSync(path.join(ROOT, ".canvas"), { recursive: true });
+    fs.writeFileSync(path.join(ROOT, ".canvas", "rules.md"), String(b.text ?? "").slice(0, 50_000));
+    return send(res, 200, { ok: true });
+  }
+  if (p === "/api/check-links" && req.method === "POST") {
+    const b = await readBody(req);
+    const base = (manifest.frameUrl || manifest.devUrl || "").replace(/\/$/, "");
+    const paths = [...new Set((b.paths || []).map(String))].filter((x) => x.startsWith("/")).slice(0, 150);
+    const out = {};
+    let i = 0;
+    const worker = async () => {
+      while (i < paths.length) {
+        const q = paths[i++];
+        try {
+          const r = await fetch(base + q, { redirect: "follow", signal: AbortSignal.timeout(8000) });
+          out[q] = r.status;
+          r.body?.cancel?.();
+        } catch (e) { out[q] = 0; }
+      }
+    };
+    await Promise.all(Array.from({ length: 6 }, worker));
+    return send(res, 200, { base, statuses: out });
+  }
+  if (req.method === "POST" && p === "/api/audit/rules") { const r = hub.rulesCheck(await readBody(req)); return send(res, r.ok ? 200 : 400, r); }
   if (req.method === "POST" && p === "/api/changelog/clear") return send(res, 200, changelog.clear());
   if (req.method === "POST" && p === "/api/listen/stop") return send(res, 200, hub.stopListening((await readBody(req)).conn));
   if (req.method === "POST" && p === "/api/permission") { const b = await readBody(req); return send(res, 200, hub.verdict(b.request_id, b.behavior)); }

@@ -17,6 +17,8 @@ import { buildGraph } from "./layout";
 import { FrameNode, GroupNode } from "./frame-node";
 
 export type CanvasHandle = {
+  /** Where a view is on screen (its center), for the helper buddy to fly to */
+  screenPoint: (id: string) => { x: number; y: number; w: number; h: number } | null;
   fitAll: () => void;
   zoomToCenter: () => void;
   focus: (id: string) => void;
@@ -37,6 +39,8 @@ type Props = {
   onPickElements: (viewId: string, elements: PickedElement[]) => void;
   /** Room taken by the floating project panel on the left */
   insetLeft?: number;
+  findingCounts?: Record<string, number>;
+  inspectingId?: string | null;
   ref?: Ref<CanvasHandle>;
 };
 
@@ -51,7 +55,7 @@ export function CanvasView(props: Props) {
 // Room the floating tools take: tabs on top, canvas toolbar on the right, prompt bar at the bottom
 const INSET = { top: 76, right: 72, bottom: 224 };
 
-function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, onPickElements, insetLeft = 12, ref }: Props) {
+function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, onPickElements, insetLeft = 12, findingCounts = {}, inspectingId = null, ref }: Props) {
   const rf = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
   const mode = manifest.mode;
@@ -170,7 +174,15 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     setTimeout(() => fitRef.current(400), 60);
   }, [allHeights, full]);
 
-  useImperativeHandle(ref, () => ({ fitAll: () => fitAll(), zoomToCenter, focus }), [fitAll, zoomToCenter, focus]);
+  const screenPoint = useCallback((id: string) => {
+    const n = rf.getNode(id);
+    if (!n) return null;
+    const w = n.width ?? n.measured?.width ?? 0, h = Math.min(n.height ?? n.measured?.height ?? 0, 900);
+    const a = rf.flowToScreenPosition({ x: n.position.x, y: n.position.y });
+    const b = rf.flowToScreenPosition({ x: n.position.x + w, y: n.position.y + h });
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, w: b.x - a.x, h: b.y - a.y };
+  }, [rf]);
+  useImperativeHandle(ref, () => ({ fitAll: () => fitAll(), zoomToCenter, focus, screenPoint }), [fitAll, zoomToCenter, focus, screenPoint]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -204,6 +216,8 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     select: onSelect,
     activeViewId: selection && (selection.kind === "section" || selection.kind === "elements") ? selection.viewId : selection?.kind === "view" ? selection.id : null,
     selectedSectionId: selection?.kind === "section" ? selection.id : null,
+    findingCounts,
+    inspectingId,
     selectSection: (viewId, index) => onSelect(index === null ? viewId : `${viewId}::${index}`, index === null ? undefined : { device }),
     setInteractive,
     rename: (id, name) => api.config({ names: { [id]: name } }),

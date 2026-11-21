@@ -104,6 +104,10 @@ The canvas has a prompt bar that sends prompts to a Claude Code chat open in the
 - Only call `canvas_wait` when the user asked you to listen (`/loupe-listen`) or a `canvas_wait` result says to call it again.
 - History is kept in `.canvas/chat.json` (ignored by git). The canvas pairs chats with hook events by Claude Code's process id.
 
+## House rules and the helper buddy
+
+`.canvas/rules.md` holds the project's house rules in plain language (committed, shared with the team). The helper buddy in Loupe checks pages itself (consistency, tokens, accessibility, links, mobile, SEO) and asks Claude to check the house rules: that canvas prompt says so, and you answer it with `canvas_findings` (one entry per broken rule, with route, file and a one-line fix) without changing files. Fix prompts from the buddy arrive as normal canvas prompts.
+
 ## Agent activity layer
 
 Hooks report what Claude is doing to the canvas: thinking, reading, editing or running a command. The canvas shows it on the views the file belongs to, with an animated ring in Claude's orange, a chip such as "Claude · Editing page.tsx", a dot in the views list and a status in the top bar. Edits to global files (layouts, global CSS) show on every frame. When Claude finishes, the affected snapshots are retaken and flagged "Updated". This needs no action from you, so carry on working normally.

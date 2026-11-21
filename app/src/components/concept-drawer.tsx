@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { ArrowsClockwise, Check, CircleNotch, Crosshair, MagnifyingGlassPlus, Sparkle, Warning, X } from "@phosphor-icons/react";
+import { ArrowsClockwise, CaretLeft, CaretRight, Check, CircleNotch, Crosshair, MagnifyingGlassPlus, Sparkle, SquaresFour, Warning, X } from "@phosphor-icons/react";
 import { api, frameUrl } from "@/lib/api";
 import type { Agent, CanvasPrompt, ChatState, Concept } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -89,13 +89,17 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const round = useMemo(() => { let n = 1, cur = p; while (cur?.parent) { const par = chat.prompts.find((x) => x.id === cur!.parent); if (!par || par.mode !== "concepts") break; n++; cur = par; } return n; }, [p, chat.prompts]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && zoom === null && !(e.target as HTMLElement).closest("textarea, input")) onClose(); };
+    // Esc tucks the drawer away instead of closing it
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && zoom === null && !(e.target as HTMLElement).closest("textarea, input")) setCollapsed(true); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, zoom]);
+  }, [zoom]);
+  // A new request opens the drawer again
+  useEffect(() => setCollapsed(false), [id]);
 
   if (!p) return null;
   const ready = p.status === "concepts" && p.concepts?.length;
@@ -116,6 +120,26 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id:
   };
   const working = agent ? `${({ thinking: "Thinking", reading: "Reading", editing: "Editing", running: "Running" } as const)[agent.phase]} ${agent.file?.split("/").pop() ?? ""}`.trim() : null;
 
+  if (collapsed) {
+    const n = p.concepts?.length ?? 0;
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          aria-label="Show design concepts"
+          className="drawer-in island absolute top-[76px] right-3 z-30 flex w-11 flex-col items-center gap-2 rounded-[14px] py-3 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <CaretLeft size={14} className="text-muted-foreground" />
+          {ready ? <SquaresFour size={18} weight="fill" className="text-scope" /> : <Sparkle size={18} weight="fill" className="agent-dot text-[var(--agent)]" />}
+          {ready && <span className="font-mono text-[11px] tabular-nums">{n}</span>}
+          <span className="text-[11px] font-medium text-muted-foreground [writing-mode:vertical-rl]">Concepts</span>
+        </button>
+        {ready && <ShotQueue p={p} base={base} />}
+      </>
+    );
+  }
+
   return (
     <aside
       aria-label="Design concepts"
@@ -129,10 +153,13 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id:
             <Crosshair size={12} weight="bold" /> {p.scope}
           </span>
         </div>
-        <Button variant="ghost" size="icon" className="-mr-2 size-8" onClick={onClose} aria-label="Close concepts"><X size={16} /></Button>
+        <div className="-mr-2 flex items-center gap-0.5">
+          <Button variant="ghost" size="icon" className="size-8" onClick={() => setCollapsed(true)} aria-label="Collapse concepts (Esc)"><CaretRight size={16} /></Button>
+          <Button variant="ghost" size="icon" className="size-8" onClick={onClose} aria-label="Close concepts"><X size={16} /></Button>
+        </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-6 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
         {applied && <Applied p={applied} title={chosen !== undefined ? p.concepts?.[chosen]?.title : undefined} working={working} />}
         {!ready ? (
           <div>
@@ -154,24 +181,27 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose }: { id:
               const isChosen = chosen === i;
               return (
                 <li key={i} className={cn("flex flex-col overflow-hidden rounded-[14px] bg-card shadow-soft-sm ring-1 ring-black/[0.06] transition-opacity dark:bg-secondary dark:ring-white/10", chosen !== undefined && !isChosen && "opacity-45", isChosen && "ring-2 ring-scope dark:ring-scope")}>
-                  <button
-                    type="button"
-                    onClick={() => shot?.dataUrl && setZoom(i)}
-                    disabled={!shot?.dataUrl}
-                    aria-label={`Enlarge concept ${i + 1}`}
-                    className="group relative block max-h-72 min-h-36 overflow-hidden bg-muted outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
+                  <div className="group relative bg-muted">
                     {shot?.dataUrl ? (
                       <>
-                        <img src={shot.dataUrl} alt={`Preview of ${c.title}`} className="block w-full" />
-                        <span className="absolute right-2 bottom-2 grid size-7 place-items-center rounded-full bg-background/90 text-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><MagnifyingGlassPlus size={14} /></span>
+                        <div tabIndex={0} aria-label={`Preview of ${c.title}, scrollable`} className="max-h-80 min-h-36 overflow-y-auto overscroll-contain outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+                          <img src={shot.dataUrl} alt={`Preview of ${c.title}`} className="block w-full" />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setZoom(i)}
+                          aria-label={`Enlarge concept ${i + 1}`}
+                          className="absolute top-2 right-2 grid size-7 place-items-center rounded-full bg-background/90 text-foreground opacity-0 shadow-sm transition-opacity outline-none group-hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <MagnifyingGlassPlus size={14} />
+                        </button>
                       </>
                     ) : shot?.error ? (
                       <span className="flex h-36 items-center justify-center gap-2 px-4 text-center text-xs text-muted-foreground"><Warning size={14} className="shrink-0" /> No preview: {shot.error}</span>
                     ) : (
                       <span className="flex h-36 items-center justify-center gap-2 text-xs text-muted-foreground"><CircleNotch size={14} className="animate-spin" /> Rendering on the page</span>
                     )}
-                  </button>
+                  </div>
                   <div className="flex flex-1 flex-col gap-2.5 p-4">
                     <div>
                       <h3 className="text-[14px] font-semibold tracking-[-0.005em]"><span className="mr-1.5 text-muted-foreground tabular-nums">{i + 1}</span>{c.title}</h3>

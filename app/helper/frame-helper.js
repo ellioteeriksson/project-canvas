@@ -486,6 +486,118 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     }
   }
 
+  /* ---------- audit: what the helper buddy checks on each page ---------- */
+  const parseRGB = (c) => { const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(c || ""); return m ? { r: +m[1], g: +m[2], b: +m[3], a: m[4] == null ? 1 : +m[4] } : null; };
+  const hex = (c) => "#" + [c.r, c.g, c.b].map((x) => Math.round(x).toString(16).padStart(2, "0")).join("");
+  const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
+  const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  function bgOf(el) {
+    for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+      const cs = getComputedStyle(n);
+      if (cs.backgroundImage && cs.backgroundImage !== "none") return null; // image or gradient: can't tell
+      const c = parseRGB(cs.backgroundColor);
+      if (c && c.a > 0.9) return c;
+    }
+    return { r: 255, g: 255, b: 255, a: 1 };
+  }
+  const visible = (el) => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden" && cs.display !== "none" && +cs.opacity > 0.05; };
+  const accName = (el) => (el.getAttribute("aria-label") || el.getAttribute("title") || el.getAttribute("aria-labelledby") && document.getElementById(el.getAttribute("aria-labelledby"))?.textContent || el.innerText || el.querySelector("img[alt]")?.getAttribute("alt") || el.querySelector("svg title")?.textContent || "").trim();
+  const tally = (obj, k, n = 1) => { if (k) obj[k] = (obj[k] || 0) + n; };
+  const firstFont = (f) => (f || "").split(",")[0].replace(/["']/g, "").trim();
+
+  async function audit(d) {
+    try {
+      if (frozenVH == null) frozenVH = window.innerHeight;
+      await settle();
+      await revealAll();
+      await settle();
+      const out = { url: location.pathname + location.search, width: window.innerWidth };
+      // SEO and document basics
+      const meta = (n) => document.querySelector(`meta[name="${n}"], meta[property="${n}"]`)?.getAttribute("content")?.trim() || null;
+      Object.assign(out, {
+        title: document.title?.trim() || null, description: meta("description"), ogTitle: meta("og:title"), ogImage: meta("og:image"),
+        viewport: meta("viewport"), lang: document.documentElement.getAttribute("lang"), canonical: document.querySelector('link[rel="canonical"]')?.href || null,
+      });
+      // Structure
+      const secs = detectSections();
+      out.sections = secs.map((x) => {
+        const el = x.el, cs = getComputedStyle(el), r = el.getBoundingClientRect();
+        const inner = [...el.querySelectorAll(":scope > *, :scope > * > *")].find((c) => { const w = c.getBoundingClientRect().width; return w > 200 && w < r.width - 40; });
+        const grid = el.querySelector("*");
+        let cols = 1;
+        for (const c of el.querySelectorAll("*")) { const ccs = getComputedStyle(c); if (ccs.display.includes("grid") && ccs.gridTemplateColumns) { cols = Math.max(cols, ccs.gridTemplateColumns.split(" ").length); } if (cols > 1) break; }
+        void grid;
+        return {
+          name: x.name, tag: x.tag, top: x.top, height: x.height, cols,
+          hasImg: !!el.querySelector("img, picture, video, svg[width]"), hasH1: !!el.querySelector("h1"), hasH2: !!el.querySelector("h2"),
+          padTop: Math.round(parseFloat(cs.paddingTop)), padBottom: Math.round(parseFloat(cs.paddingBottom)),
+          contentWidth: inner ? Math.round(inner.getBoundingClientRect().width) : Math.round(r.width), selector: cssPath(el),
+        };
+      });
+      const hdr = document.querySelector("header, [role=banner], body > nav, nav");
+      const ftr = document.querySelector("footer, [role=contentinfo]");
+      const box = (el) => el && visible(el) ? { height: Math.round(el.getBoundingClientRect().height), links: el.querySelectorAll("a[href]").length, text: el.innerText.replace(/\s+/g, " ").trim().slice(0, 160) } : null;
+      out.header = box(hdr);
+      out.footer = box(ftr);
+      // Typography and color
+      const fonts = {}, sizes = {}, colors = {}, bgs = {}, h1 = [], h2 = [];
+      const lowContrast = [];
+      let tinyText = 0, checked = 0;
+      const textEls = [...document.body.querySelectorAll("h1,h2,h3,h4,h5,h6,p,a,li,span,button,label,td,th,small,strong,em,blockquote,figcaption,dt,dd")].filter((el) => !el.closest("[data-project-canvas]"));
+      for (const el of textEls) {
+        if (!visible(el)) continue;
+        const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1);
+        if (!own) continue;
+        const cs = getComputedStyle(el);
+        const size = parseFloat(cs.fontSize);
+        tally(fonts, firstFont(cs.fontFamily));
+        tally(sizes, Math.round(size) + "px");
+        const fg = parseRGB(cs.color);
+        if (fg) tally(colors, hex(fg));
+        if (size < 12) tinyText++;
+        if (el.tagName === "H1") h1.push({ text: el.innerText.trim().slice(0, 80), font: firstFont(cs.fontFamily), size: Math.round(size), weight: cs.fontWeight });
+        if (el.tagName === "H2" && h2.length < 6) h2.push({ font: firstFont(cs.fontFamily), size: Math.round(size), weight: cs.fontWeight });
+        if (checked < 400 && fg) {
+          checked++;
+          const bg = bgOf(el);
+          if (bg) {
+            const ratio = contrast(fg, bg), large = size >= 24 || (size >= 18.66 && +cs.fontWeight >= 700);
+            if (ratio < (large ? 3 : 4.5) && lowContrast.length < 12) lowContrast.push({ selector: cssPath(el), text: el.innerText.trim().slice(0, 60), ratio: Math.round(ratio * 100) / 100, fg: hex(fg), bg: hex(bg) });
+          }
+        }
+      }
+      for (const el of document.body.querySelectorAll("*")) {
+        if (el.closest("[data-project-canvas]")) continue;
+        const c = parseRGB(getComputedStyle(el).backgroundColor);
+        if (c && c.a > 0.5) tally(bgs, hex(c));
+      }
+      Object.assign(out, { fonts, sizes, colors, bgs, h1, h2, tinyText });
+      // Accessibility
+      const headings = [...document.querySelectorAll("h1,h2,h3,h4,h5,h6")].filter(visible).map((h) => +h.tagName[1]);
+      const skips = [];
+      headings.forEach((lv, i) => { if (i && lv > headings[i - 1] + 1) skips.push(`h${headings[i - 1]} → h${lv}`); });
+      const imgNoAlt = [...document.querySelectorAll("img")].filter((i) => visible(i) && !i.hasAttribute("alt")).slice(0, 12).map((i) => ({ selector: cssPath(i), src: (i.getAttribute("src") || "").slice(-60) }));
+      const unnamed = [...document.querySelectorAll("a[href], button, [role=button]")].filter((el) => visible(el) && !accName(el)).slice(0, 12).map((el) => ({ selector: cssPath(el), tag: el.tagName.toLowerCase() }));
+      const inputsNoLabel = [...document.querySelectorAll("input:not([type=hidden]):not([type=submit]):not([type=button]), select, textarea")].filter((el) => visible(el) && !(el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) && !el.closest("label") && !el.getAttribute("aria-label") && !el.getAttribute("aria-labelledby")).slice(0, 12).map((el) => ({ selector: cssPath(el) }));
+      out.a11y = { headings, skips, imgNoAlt, unnamed, inputsNoLabel, lowContrast, h1Count: document.querySelectorAll("h1").length };
+      // Links
+      const seen = new Set();
+      out.links = [...document.querySelectorAll("a")].filter((a) => !a.closest("[data-project-canvas]")).map((a) => {
+        const raw = a.getAttribute("href");
+        let abs = null, internal = false;
+        try { if (raw && !/^(mailto:|tel:|javascript:)/i.test(raw)) { const u = new URL(raw, location.href); abs = u.href; internal = u.origin === location.origin; } } catch {}
+        return { raw, path: internal ? new URL(abs).pathname : null, external: !internal && abs ? abs : null, text: (a.innerText || accName(a)).trim().slice(0, 50), selector: cssPath(a) };
+      }).filter((l) => { const k = l.raw + "|" + l.text; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 200);
+      // Mobile
+      const docW = document.documentElement.scrollWidth;
+      out.overflowX = docW > window.innerWidth + 2;
+      out.overflowEls = out.overflowX ? [...document.body.querySelectorAll("*")].filter((el) => { const r = el.getBoundingClientRect(); return r.right > window.innerWidth + 2 && r.width > 0 && getComputedStyle(el).position !== "fixed"; }).filter((el, _, all) => !all.some((o) => o !== el && el.contains(o))).slice(0, 6).map((el) => ({ selector: cssPath(el), width: Math.round(el.getBoundingClientRect().width) })) : [];
+      post({ type: "audit-report", id: d.id, report: out });
+    } catch (err) {
+      post({ type: "audit-error", id: d.id, message: String(err?.message || err).slice(0, 300) });
+    }
+  }
+
   // Change the page only after the framework has hydrated it; earlier changes cause hydration errors
   const afterHydration = (fn) => {
     const go = () => setTimeout(fn, 250);
@@ -504,6 +616,7 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     if (d.type === "wireframe") { if (d.on || wire) afterHydration(() => setWire(!!d.on)); }
     if (d.type === "pick") afterHydration(() => setPicking(!!d.on, d.selectors));
     if (d.type === "concept") afterHydration(() => concept(d));
+    if (d.type === "audit") afterHydration(() => audit(d));
     // The canvas asks after an agent edit: did the page update itself (hot reload) since then?
     if (d.type === "query-mutation") post({ type: "mutation", at: lastMutation, id: d.id });
   });

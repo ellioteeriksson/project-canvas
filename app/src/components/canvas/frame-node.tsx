@@ -199,6 +199,11 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
             <Icon size={14} weight={selected ? "fill" : "regular"} />
           </button>
           <EditableName value={v.name} onSave={(n) => c.rename(v.id, n)} onClick={() => c.select(v.id)} className="cursor-pointer" />
+          {!!c.findingCounts[viewId] && (
+            <span className="ml-1 grid h-[16px] min-w-[16px] shrink-0 place-items-center rounded-full bg-[#ff3b30] px-1 text-[10px] leading-none font-semibold text-white tabular-nums" aria-label={`${c.findingCounts[viewId]} findings`}>
+              {c.findingCounts[viewId]}
+            </span>
+          )}
         </div>
         {agentHere ? (
           <AgentChip agent={agents[0]} more={agents.length - 1} />
@@ -221,6 +226,7 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
           inside && "ring-0 shadow-[0_0_0_calc(1px*var(--title-scale,1))_var(--scope)]",
           interactive && !picking && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--live)]",
           picking && "ring-0 shadow-[0_0_0_calc(2px*var(--title-scale,1))_var(--scope)]",
+          c.inspectingId === viewId && "inspecting",
           interactive && "nodrag nopan nowheel",
         )}
         style={{ width: f.w, height: cardH }}

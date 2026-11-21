@@ -1,6 +1,6 @@
 ---
 description: Let this chat take prompts from Loupe prompt bar (listen mode)
-allowed-tools: mcp__plugin_loupe_canvas__canvas_wait, mcp__plugin_loupe_canvas__canvas_reply, mcp__plugin_loupe_canvas__canvas_concepts, mcp__plugin_loupe_canvas__canvas_stop_listening
+allowed-tools: mcp__plugin_loupe_canvas__canvas_wait, mcp__plugin_loupe_canvas__canvas_reply, mcp__plugin_loupe_canvas__canvas_concepts, mcp__plugin_loupe_canvas__canvas_findings, mcp__plugin_loupe_canvas__canvas_stop_listening
 ---
 
 Listen for prompts the user sends from Loupe prompt bar, and do them here.

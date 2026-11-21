@@ -1,7 +1,7 @@
 ---
 description: Open Loupe for this project (sitemap or flow of every view, live)
 argument-hint: "[project path] [--port 4777]"
-allowed-tools: Bash, Read, Edit, Write, mcp__plugin_loupe_canvas__canvas_wait, mcp__plugin_loupe_canvas__canvas_reply, mcp__plugin_loupe_canvas__canvas_concepts
+allowed-tools: Bash, Read, Edit, Write, mcp__plugin_loupe_canvas__canvas_wait, mcp__plugin_loupe_canvas__canvas_reply, mcp__plugin_loupe_canvas__canvas_concepts, mcp__plugin_loupe_canvas__canvas_findings
 ---
 
 Open Loupe for the project in `$ARGUMENTS` (default: the current working directory).

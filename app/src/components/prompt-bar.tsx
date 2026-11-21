@@ -46,7 +46,8 @@ export function PromptBar({ chat, agents, selection, scopeName, insetLeft = 12, 
 
   const conns = useMemo(() => chat.conns.filter((c) => c.status !== "offline").sort((a, b) => RANK[a.status] - RANK[b.status] || b.last - a.last), [chat.conns]);
   const current = conns.find((c) => c.id === target) ?? conns[0] ?? null;
-  const recent = chat.prompts.slice(-30);
+  // Rules checks belong to the helper buddy, not to the prompt history
+  const recent = chat.prompts.filter((p) => p.mode !== "audit").slice(-30);
   const latest = recent[recent.length - 1];
   const showLatest = !open && latest && latest.status !== "cancelled" && !(latest.status === "done" && Date.now() - (latest.doneAt ?? 0) > 120_000);
 
