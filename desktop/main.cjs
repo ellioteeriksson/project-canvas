@@ -2,7 +2,7 @@
 // opened Loupe in; each project's canvas opens in a tab of its own. The canvases are the same
 // local servers /loupe starts, so Claude Code sessions in those projects connect to them as usual,
 // and they keep running after you quit the app.
-const { app, BaseWindow, BrowserWindow, WebContentsView, Menu, dialog, ipcMain, nativeTheme, shell } = require("electron");
+const { app, BaseWindow, WebContentsView, Menu, dialog, ipcMain, nativeTheme, shell } = require("electron");
 const path = require("node:path");
 const os = require("node:os");
 const { pathToFileURL } = require("node:url");
@@ -52,14 +52,21 @@ function layout() {
   if (!win) return;
   const { width, height } = win.getContentBounds();
   bar.setBounds({ x: 0, y: 0, width, height: BAR });
-  for (const t of tabs) t.view.setBounds({ x: 0, y: BAR, width, height: Math.max(0, height - BAR) });
+  const h = Math.max(0, height - BAR);
+  for (const t of tabs) {
+    // A mobile prototype is a phone-sized page in the middle of the tab
+    if (t.play && t.mobile) {
+      const ph = Math.min(844, Math.max(0, h - 32));
+      t.view.setBounds({ x: Math.round((width - 390) / 2), y: BAR + Math.round((h - ph) / 2), width: 390, height: ph });
+    } else t.view.setBounds({ x: 0, y: BAR, width, height: h });
+  }
 }
 
 function sendState() {
   if (!bar) return;
   bar.webContents.send("tabs", {
     active: activeId,
-    tabs: tabs.map((t) => ({ id: t.id, title: t.title, home: t.id === "home", ...(status[t.id] || {}) })),
+    tabs: tabs.map((t) => ({ id: t.id, title: t.title, home: t.id === "home", play: !!t.play, ...(status[t.id] || {}) })),
   });
 }
 
@@ -70,7 +77,7 @@ function select(id) {
   for (const x of tabs) x.view.setVisible(x.id === id);
   t.view.webContents.focus();
   win.setTitle(t.id === "home" ? "Loupe" : `${t.title} · Loupe`);
-  win.setRepresentedFilename?.(t.id === "home" ? "" : t.id);
+  win.setRepresentedFilename?.(t.id === "home" || t.play ? "" : t.id);
   sendState();
 }
 
@@ -147,23 +154,29 @@ ipcMain.handle("loupe:pick-folder", async () => {
   const res = await dialog.showOpenDialog(win, { title: "Add a project", buttonLabel: "Add project", properties: ["openDirectory"] });
   return res.canceled ? null : res.filePaths[0];
 });
-// Play: the site on its own, like a visitor sees it. Desktop fills the screen; mobile is a phone-sized window.
-let playWin = null;
+// Play: the site on its own, like a visitor sees it, in a tab of its own (like Figma's prototype tab).
+// One play tab per site; playing again from another page reuses it. Mobile shows a phone-sized page.
 ipcMain.on("loupe:play", (_e, p) => {
-  if (!p || !LOCAL.test(p.url)) return;
-  if (playWin && !playWin.isDestroyed()) playWin.close();
+  if (!p || typeof p.url !== "string" || !LOCAL.test(p.url)) return;
+  focusWindow();
+  const id = `play:${new URL(p.url).origin}`;
   const mobile = p.device === "mobile";
-  playWin = new BrowserWindow({
-    width: mobile ? 390 : 1440, height: mobile ? 844 : 900, title: p.title,
-    fullscreen: !mobile, backgroundColor: "#000000", autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
-  });
-  guard(playWin.webContents);
-  playWin.webContents.on("before-input-event", (e, input) => {
-    if (input.type === "keyDown" && input.key === "Escape" && !input.meta && !input.control) { e.preventDefault(); playWin?.close(); }
-  });
-  playWin.on("closed", () => { playWin = null; if (win) win.focus(); });
-  playWin.loadURL(p.url);
+  const title = String(p.title || "Prototype").slice(0, 120);
+  let t = tabs.find((x) => x.id === id);
+  if (t) {
+    t.view.webContents.loadURL(p.url);
+    Object.assign(t, { title, mobile });
+  } else {
+    const view = new WebContentsView({ webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false } });
+    view.setBackgroundColor("#ffffff");
+    guard(view.webContents);
+    view.webContents.loadURL(p.url);
+    win.contentView.addChildView(view);
+    t = { id, title, view, play: true, mobile };
+    tabs.push(t);
+  }
+  layout();
+  select(id);
 });
 ipcMain.on("tabs:select", (_e, id) => select(id));
 ipcMain.on("tabs:close", (_e, id) => close(id));

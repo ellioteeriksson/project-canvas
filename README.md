@@ -15,7 +15,7 @@ Loupe is a Claude Code plugin for designers and developers. It lays out every pa
 - **Talk to Claude without a terminal.** In the Loupe app, opening a project starts a Claude Code session for it in the background. Prompt from the bar, or open the chat panel (⌘J) to follow everything Claude says and does. Edits go through on their own; shell commands and anything outside the project ask you first, in Loupe. Start more sessions to have several Claudes work in parallel: each prompt goes to the Claude that worked on that page, or to a free one.
 - **Comment on the canvas.** Press **C** and click anywhere on a page to pin a note, like in Figma. Send notes to Claude one at a time or all together; each is scoped to the page and section it sits on, and resolves itself when Claude is done.
 - **Know what changed, and undo it.** The **Changelog** tab logs every change Claude makes with the request, the scope, Claude's summary, the files it touched and a before/after picture of the page (drag to compare). See the code changes, undo one change, or put the whole project back to how it was before or after any change. Export it as Markdown.
-- **Play it.** The ▶ button opens the site full screen from the selected page, the way visitors see it (Esc to leave).
+- **Play it.** The ▶ button opens the site from the selected page in a tab of its own, the way visitors see it (a new browser tab outside the app).
 - **See your design system.** Tokens, primitives and components, and which views use each. Select a component to scope prompts to it.
 - **Ship it.** Commit, push or open a pull request from the top bar, with a commit message Claude can draft from the diff.
 

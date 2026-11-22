@@ -238,19 +238,19 @@ export default function App() {
           <SettingsPopover manifest={manifest} />
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Play: open the site full screen" onClick={() => {
+              <Button variant="ghost" size="icon" aria-label="Play: open the site in a new tab" onClick={() => {
                 // Start on the selected page, like Figma's Present starts on the selected frame
                 const viewId = selection ? (selection.kind === "section" || selection.kind === "elements" ? selection.viewId : selection.id) : null;
                 const v = manifest.views.find((x) => x.id === viewId && x.url && !x.dynamic) ?? manifest.views.find((x) => x.url && !x.dynamic);
                 if (!v?.url) return;
                 const url = manifest.devUrl.replace(/\/$/, "") + (v.url.startsWith("/") ? v.url : "/" + v.url);
-                if (shell?.play) shell.play({ url, device: manifest.viewport, title: `${manifest.project.name}: ${v.name}` });
+                if (shell?.play) shell.play({ url, device: manifest.viewport, title: manifest.project.name });
                 else window.open(url, "_blank", "noopener");
               }}>
                 <Play size={17} weight="fill" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Play: open the site full screen from the selected page {shell ? "(Esc to leave)" : "in a new tab"}</TooltipContent>
+            <TooltipContent>Play: open the site in a new tab, from the selected page</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
