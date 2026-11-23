@@ -7,7 +7,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import net from "node:net";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { list, forget, remember, thumbnail, loadManifest } from "./registry.mjs";
 
@@ -50,10 +50,34 @@ function defaultSpawn(root) {
   return child;
 }
 
+/** The command line a process runs, to tell canvases the app started from ones a terminal started */
+function commandOf(pid) {
+  try { return execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 3000 }).trim(); } catch { return ""; }
+}
+/** A canvas server a Loupe app started (its Node is the app's own binary), not one from a terminal */
+const fromOldApp = (pid) => /\.app(\.old)?\/Contents\/MacOS\//.test(commandOf(pid));
+
+/**
+ * Canvases an older Loupe app started keep running from the old app's files and keep reading your
+ * project folders, so macOS asks again for access on behalf of that old copy. Stop them once
+ * they're idle; they start again from this app when you open them.
+ */
+async function stopOutdated() {
+  if (!process.versions.electron) return;
+  for (const p of list()) {
+    const up = await running(p.root).catch(() => null);
+    if (!up || up.version === VERSION || up.working || up.waiting) continue;
+    const { pid } = readState(p.root);
+    if (pid && fromOldApp(pid)) try { process.kill(pid, "SIGTERM"); } catch {}
+  }
+}
+
 /** Open a project's canvas, starting its server if it isn't running. Resolves to its URL. */
 async function openProject(root, spawnServer) {
   const up = await running(root);
   if (up && up.version === VERSION) return up.url;
+  // An older canvas for this project gives way to the new one
+  if (up) { const { pid } = readState(root); if (pid) try { process.kill(pid, "SIGTERM"); } catch {} await new Promise((r) => setTimeout(r, 400)); }
   spawnServer(root);
   for (let i = 0; i < 100; i++) {
     await new Promise((r) => setTimeout(r, 200));
@@ -169,6 +193,8 @@ export async function startHub({ port = 4700, spawnServer } = {}) {
   const p = await freePort(port);
   const server = createHub({ spawnServer });
   await new Promise((r) => server.listen(p, "127.0.0.1", r));
+  setTimeout(() => stopOutdated().catch(() => {}), 3000).unref?.();
+  setInterval(() => stopOutdated().catch(() => {}), 120_000).unref?.();
   return { url: `http://localhost:${p}`, server };
 }
 

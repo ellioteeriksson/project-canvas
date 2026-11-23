@@ -58,7 +58,7 @@ npm start          # run it
 npm run dist       # or build Loupe.app (desktop/dist), for your Applications folder
 ```
 
-The build isn't signed with an Apple Developer ID, so the first time, right-click Loupe.app and choose **Open**.
+The build isn't signed with an Apple Developer ID, so the first time, right-click Loupe.app and choose **Open**. If you build it yourself, sign every build with the same certificate (a self-signed code-signing certificate is enough): macOS remembers folder access per signing identity, so an ad-hoc signed build asks for access to your Documents folder again after every update. When you update the app, it stops canvases an older copy of the app started once they're idle, so the old copy stops asking too.
 
 Prefer the browser? `/loupe-home` in Claude Code, or `node server/hub.mjs --open`, shows the same projects in a tab.
 
