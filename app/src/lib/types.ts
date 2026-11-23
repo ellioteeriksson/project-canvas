@@ -75,7 +75,7 @@ export type CanvasPrompt = {
   id: string; conn: string | null; session: string | null; text: string; scope: string;
   status: "queued" | "sending" | "delivered" | "done" | "failed" | "cancelled" | "concepts" | "findings" | "sketching";
   /** Fast concepts sketched by Loupe: each slot is pending, ready or failed, and concepts holds nulls until ready */
-  slots?: ("pending" | "ready" | "failed")[]; slotErrors?: Record<number, string>; sketch?: { stage: string; at: number }; fast?: boolean;
+  slots?: ("pending" | "ready" | "failed")[]; slotErrors?: Record<number, string>; sketch?: { stage: string; at: number }; fast?: boolean; fallbackNote?: string | null;
   mode?: "direct" | "concepts" | "apply" | "audit";
   findings?: { rule: string | null; severity: "error" | "warning" | "info"; title: string; detail: string | null; route: string | null; file: string | null; fix: string | null }[]; parent?: string | null; applied?: string;
   concepts?: (Concept | null)[]; chosen?: { index: number; comment: string | null; at: number };

@@ -6,6 +6,7 @@ const { app, BaseWindow, WebContentsView, Menu, dialog, ipcMain, nativeTheme, sh
 const path = require("node:path");
 const os = require("node:os");
 const { pathToFileURL } = require("node:url");
+const { execFile } = require("node:child_process");
 
 const ROOT = app.isPackaged ? path.join(process.resourcesPath, "loupe") : path.resolve(__dirname, "..");
 const LOCAL = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/;
@@ -13,6 +14,31 @@ const BAR = 40; // tab bar height
 
 // Apps opened from the Dock get a bare PATH; the canvases need git and claude like in a terminal
 process.env.PATH = [...new Set([...(process.env.PATH || "").split(":"), "/opt/homebrew/bin", "/usr/local/bin", `${os.homedir()}/.local/bin`, `${os.homedir()}/.claude/local`, "/usr/bin", "/bin"])].filter(Boolean).join(":");
+
+/**
+ * Apps opened from the Dock don't get what your shell profile sets up (PATH, and things like
+ * CLAUDE_CODE_OAUTH_TOKEN or a proxy), so Claude Code started from Loupe could log in differently
+ * from Claude Code in your terminal. Read your login shell's environment once, like a terminal would.
+ */
+function loadShellEnv() {
+  return new Promise((resolve) => {
+    const shell = process.env.SHELL || "/bin/zsh";
+    const MARK = "__LOUPE_ENV_START__";
+    execFile(shell, ["-ilc", `printf '${MARK}'; env -0`], { encoding: "utf8", timeout: 8000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, LOUPE_SHELL_ENV: "1" } }, (err, out) => {
+      const i = String(out || "").indexOf(MARK);
+      if (i >= 0) {
+        const skip = new Set(["PWD", "OLDPWD", "SHLVL", "_", "TERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "ELECTRON_RUN_AS_NODE", "LOUPE_SHELL_ENV"]);
+        for (const kv of out.slice(i + MARK.length).split("\0")) {
+          const eq = kv.indexOf("=");
+          if (eq <= 0) continue;
+          const k = kv.slice(0, eq);
+          if (!skip.has(k) && !k.startsWith("npm_")) process.env[k] = kv.slice(eq + 1);
+        }
+      }
+      resolve();
+    });
+  });
+}
 
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on("second-instance", () => focusWindow());
@@ -245,6 +271,9 @@ function menu() {
 
 app.whenReady().then(async () => {
   menu();
+  await loadShellEnv();
+  // and the usual places, in case the profile doesn't add them
+  process.env.PATH = [...new Set([...(process.env.PATH || "").split(":"), "/opt/homebrew/bin", "/usr/local/bin", `${os.homedir()}/.local/bin`, `${os.homedir()}/.claude/local`, "/usr/bin", "/bin"])].filter(Boolean).join(":");
   const { startHub } = await import(pathToFileURL(path.join(ROOT, "server", "hub.mjs")).href);
   try {
     hubUrl = (await startHub({ port: 4700 })).url;

@@ -169,7 +169,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose, collaps
               {p.status === "failed" || p.status === "cancelled" ? (
                 <><Warning size={14} /> {p.note ?? "Claude didn't make concepts for this request"}</>
               ) : (
-                <><Sparkle size={14} weight="fill" className="agent-dot text-[var(--agent)]" /> {sketching ? (p.sketch ? "Sketching 4 concepts at once" : "Reading the page") : p.status === "queued" ? (conn?.status === "busy" ? "Waiting for Claude to finish what it's doing" : "Waiting for the chat to pick this up") : working ?? "Claude is sketching 4 concepts"}</>
+                <><Sparkle size={14} weight="fill" className="agent-dot text-[var(--agent)]" /> {p.fallbackNote && !sketching ? `${p.fallbackNote} ` : ""}{sketching ? (p.sketch ? "Sketching 4 concepts at once" : "Reading the page") : p.status === "queued" ? (conn?.status === "busy" ? "Waiting for Claude to finish what it's doing" : "Waiting for the chat to pick this up") : working ?? "Claude is sketching 4 concepts"}</>
               )}
             </p>
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">

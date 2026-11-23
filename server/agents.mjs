@@ -113,6 +113,12 @@ export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, 
 
   function onLine(s, line) {
     let m; try { m = JSON.parse(line); } catch { return; }
+    // Every event carries the session id; take it from the first one
+    if (m.session_id && s.claudeSession !== m.session_id) {
+      s.claudeSession = m.session_id;
+      hub.setManaged(s.id, { session: m.session_id });
+      save();
+    }
     if (m.type === "system" && m.subtype === "init") {
       s.claudeSession = m.session_id;
       hub.setManaged(s.id, { session: m.session_id });
@@ -160,7 +166,10 @@ export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, 
     if (m.type === "result") {
       s.cost = m.total_cost_usd ?? s.cost;
       const text = typeof m.result === "string" ? m.result : "";
-      emit(s, { kind: "done", error: !!m.is_error, text: m.is_error ? text.slice(0, 600) : "", ms: m.duration_ms });
+      const authFail = m.is_error && /authenticat|oauth|log ?in|api key|credential/i.test(text);
+      if (authFail) s.error = "Claude Code isn't logged in for Loupe. Run claude in a terminal, type /login, then start a new session here.";
+      emit(s, { kind: "done", error: !!m.is_error, text: authFail ? s.error : m.is_error ? text.slice(0, 600) : "", ms: m.duration_ms });
+      if (authFail) push();
       // Claude may finish without calling canvas_reply: close the prompt with its last words
       const open = hub.openPromptOf(s.id);
       if (open) hub.reply(s.id, open.id, text ? text.slice(0, 1200) : m.is_error ? "Claude stopped with an error." : "Done.");
@@ -198,6 +207,10 @@ export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, 
     s.proc = proc;
     sessions.set(id, s);
     hub.attach(id, { label: s.label, write: hubWriter(s), session: s.claudeSession });
+    // Claude Code only says hello (init) after the first message, so it takes messages right away
+    s.state = "idle";
+    hub.setManaged(id, { state: "idle" });
+    pump(s);
     let buf = "";
     proc.stdout.on("data", (d) => {
       buf += d;

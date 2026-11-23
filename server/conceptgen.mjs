@@ -131,14 +131,17 @@ export function createConceptEngine({ root, shooter, hub, pageUrl, log = () => {
       return false;
     }
     hub.conceptProgress(p.id, { stage: "sketching", at: Date.now() });
-    let ok = 0;
+    let ok = 0, lastError = null;
+    // The first one starts a moment ahead, so a login that needs refreshing is refreshed once, not four times at once
     const jobs = DIRECTIONS.map((_, index) =>
-      sketch({ index, request, scopeLabel: p.scope, info: { ...p.info, promptId: p.id }, ctx, previous })
+      new Promise((r) => setTimeout(r, index ? 1500 : 0))
+        .then(() => sketch({ index, request, scopeLabel: p.scope, info: { ...p.info, promptId: p.id }, ctx, previous }))
         .then((c) => { ok++; hub.conceptPart(p.id, index, c); })
-        .catch((e) => { log(`concept ${index + 1} failed: ${e.message}`); hub.conceptPart(p.id, index, null, e.message); }));
+        .catch((e) => { log(`concept ${index + 1} failed: ${e.message}`); lastError = e.message; hub.conceptPart(p.id, index, null, e.message); }));
     await Promise.all(jobs);
     running.delete(p.id);
     log(`concepts for ${p.id}: ${ok} of 4 in ${Math.round((Date.now() - t0) / 1000)}s`);
+    if (!ok) p.fallbackNote = /authenticat|oauth|log ?in/i.test(lastError || "") ? "Loupe couldn't log in to Claude Code to sketch the concepts, so the chat is making them." : "Loupe couldn't sketch the concepts, so the chat is making them.";
     return ok > 0;
   }
 
