@@ -123,16 +123,19 @@ function selectionRecord(sel) {
     const device = sel.device === "mobile" ? "mobile" : "desktop";
     const snap = [`${viewId}|${device}|live`, `${viewId}|${device}|wireframe`].map((k) => snapshots.index[k]).find((x) => x?.sections?.length)
       || Object.entries(snapshots.index).find(([k, x]) => k.startsWith(`${viewId}|`) && x?.sections?.length)?.[1];
-    const sec = snap?.sections?.[Number(idx)];
+    // Picked on the live page (Focus): use what the page reported if the snapshot doesn't have it
+    const live = sel.live && typeof sel.live === "object" ? { name: String(sel.live.name || "").slice(0, 120), heading: sel.live.heading ? String(sel.live.heading).slice(0, 120) : null, tag: String(sel.live.tag || "section").slice(0, 20), id: sel.live.id ? String(sel.live.id).slice(0, 120) : null, component: sel.live.component ? String(sel.live.component).slice(0, 120) : null, top: Number(sel.live.top) || 0, height: Number(sel.live.height) || 0 } : null;
+    const snapSec = snap?.sections?.[Number(idx)];
+    const sec = live && (!snapSec || snapSec.name !== live.name) ? live : snapSec;
     if (!v || !sec) return null;
-    const code = matchCodeSection(v, snap.sections, Number(idx));
+    const code = matchCodeSection(v, sec === live ? (sel.liveList || [live]) : snap.sections, sec === live && !sel.liveList ? 0 : Number(idx));
     // The section's own component plus the page file (where it's placed); everything else asks first
     const files = [...new Set([...(code ? [code.file] : []), v.file].filter(Boolean))];
     return {
       kind: "section", id: sel.id, device, name: sec.name, viewId: v.id, viewName: v.name, route: v.route, url: v.url,
       heading: sec.heading, tag: sec.tag, domId: sec.id, component: code?.name || sec.component || null,
       componentFile: code?.file || null, file: v.file, files, sharedFiles: v.sharedFiles,
-      position: { index: Number(idx), of: snap.sections.length, top: sec.top, height: sec.height },
+      position: { index: Number(idx), of: sec === live ? (sel.liveList?.length ?? Number(idx) + 1) : snap.sections.length, top: sec.top, height: sec.height },
     };
   }
   const v = manifest.views.find((x) => x.id === sel.id);

@@ -464,6 +464,85 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     post({ type: "inspected", element: stylesOf(el), mirrored: true });
   }
 
+  /* ---------- focus: hover a section, click it to prompt about it (⌘-click still clicks the page) ---------- */
+  let focusing = false, secList = [], secHover = -1, secSel = -1, secAt = 0, rectRaf = 0;
+  const sections = () => {
+    if (Date.now() - secAt > 1500) { try { secList = detectSections(); } catch { secList = []; } secAt = Date.now(); }
+    return secList;
+  };
+  const secIndexAt = (el) => sections().findIndex((x) => x.el === el || x.el.contains(el));
+  function drawFocus() {
+    const l = layer();
+    const list = sections();
+    const parts = [];
+    for (const [i, cls] of [[secSel, "pc-chosen"], [secHover !== secSel ? secHover : -1, "pc-hover"]]) {
+      const x = list[i];
+      if (!x?.el?.isConnected) continue;
+      parts.push(box(x.el, cls, `${x.name || `Section ${i + 1}`}`));
+    }
+    l.replaceChildren(...parts);
+  }
+  function sendRect() {
+    cancelAnimationFrame(rectRaf);
+    rectRaf = requestAnimationFrame(() => {
+      const x = sections()[secSel];
+      if (!x?.el?.isConnected) return;
+      const r = x.el.getBoundingClientRect();
+      post({ type: "section-rect", index: secSel, rect: { top: r.top, bottom: r.bottom, left: r.left, width: r.width }, vh: innerHeight });
+    });
+  }
+  function pickSection(i, scroll) {
+    const list = sections();
+    if (i < 0 || i >= list.length) return;
+    secSel = i;
+    const x = list[i];
+    if (scroll) x.el.scrollIntoView({ block: x.el.getBoundingClientRect().height > innerHeight * 0.8 ? "start" : "center", behavior: "smooth" });
+    drawFocus();
+    const { el, ...data } = x;
+    post({ type: "section-picked", index: i, section: data, count: list.length });
+    sendRect();
+    setTimeout(sendRect, 400);
+  }
+  function onFocusMove(e) {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (ignore(el)) return;
+    const i = secIndexAt(el);
+    if (i !== secHover) { secHover = i; drawFocus(); }
+  }
+  function onFocusClick(e) {
+    if (!focusing || e.metaKey || e.ctrlKey) return; // ⌘-click uses the page as normal
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    if (e.type !== "click") return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (ignore(el)) return;
+    // ⌥-click picks the element itself instead of its section
+    if (e.altKey) { post({ type: "picked", elements: [describe(el)] }); return; }
+    const i = secIndexAt(el);
+    if (i >= 0) pickSection(i, false);
+  }
+  const onFocusScroll = () => { if (secSel >= 0) sendRect(); };
+  function setFocusing(on) {
+    if (on === focusing) return;
+    focusing = on;
+    if (on) {
+      secAt = 0;
+      addEventListener("mousemove", onFocusMove, true);
+      BLOCK.forEach((t) => addEventListener(t, onFocusClick, true));
+      addEventListener("scroll", onFocusScroll, { passive: true });
+      addEventListener("resize", onFocusScroll);
+      document.documentElement.style.cursor = "pointer";
+      post({ type: "sections", list: sections().map(({ el, ...d }) => d) });
+    } else {
+      removeEventListener("mousemove", onFocusMove, true);
+      BLOCK.forEach((t) => removeEventListener(t, onFocusClick, true));
+      removeEventListener("scroll", onFocusScroll);
+      removeEventListener("resize", onFocusScroll);
+      document.documentElement.style.cursor = "";
+      secHover = secSel = -1;
+      document.getElementById("pc-pick-layer")?.remove();
+    }
+  }
+
   /* ---------- breakpoints side by side: scroll together ---------- */
   let syncing = false, applyingScroll = false;
   const scrollMax = () => Math.max(1, document.documentElement.scrollHeight - innerHeight);
@@ -807,6 +886,8 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     }
     if (d.type === "wireframe") { if (d.on || wire) afterHydration(() => setWire(!!d.on)); }
     if (d.type === "pick") afterHydration(() => setPicking(!!d.on, d.selectors));
+    if (d.type === "focus") afterHydration(() => { setFocusing(!!d.on); if (d.on && d.section != null) pickSection(d.section, true); });
+    if (d.type === "focus-section") { secAt = 0; if (d.index == null) { secSel = -1; drawFocus(); } else pickSection(d.index, true); }
     if (d.type === "inspect") afterHydration(() => setInspecting(!!d.on));
     if (d.type === "inspect-selector") afterHydration(() => { setInspecting(true); inspectSelector(d.selector); });
     if (d.type === "scroll-sync") syncing = !!d.on;

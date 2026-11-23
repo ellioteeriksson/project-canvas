@@ -3,7 +3,8 @@ import { SidebarSimple, TreeStructure, FlowArrow, Swatches, Rows, ClockCounterCl
 import { SidePanel, PANEL_W, type PanelTab } from "@/components/side-panel";
 import { FeedbackBoard } from "@/components/feedback-board";
 import { BreakpointsView } from "@/components/breakpoints-view";
-import type { CanvasComment } from "@/lib/types";
+import { PageFocus } from "@/components/page-focus";
+import type { CanvasComment, PageSection } from "@/lib/types";
 import { ChangelogView } from "@/components/changelog-view";
 import { Buddy } from "@/components/buddy";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
@@ -38,6 +39,9 @@ export default function App() {
   const [canStart, setCanStart] = useState(false);
   const [commenting, setCommenting] = useState(false);
   const [activeComment, setActiveComment] = useState<string | null>(null);
+  // A page up close: click a section and prompt right there
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [focusDevice, setFocusDevice] = useState<"desktop" | "mobile">("desktop");
   const [winW, setWinW] = useState(() => window.innerWidth);
   useEffect(() => { const on = () => setWinW(window.innerWidth); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, []);
   useEffect(() => {
@@ -50,7 +54,8 @@ export default function App() {
       const t = e.target as HTMLElement;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") { e.preventDefault(); setPanel((p) => (p ? null : "claude")); return; }
       if (t.closest("input, textarea, [contenteditable]") || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key.toLowerCase() === "c" && tab === "canvas") { e.preventDefault(); setCommenting((on) => !on); }
+      if (e.key.toLowerCase() === "c" && tab === "canvas" && !focusId) { e.preventDefault(); setCommenting((on) => !on); }
+      if (e.key === "Enter" && tab === "canvas" && !focusId && selection?.kind === "view" && manifest?.views.find((v) => v.id === selection.id)?.url) { e.preventDefault(); openFocus(selection.id); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -91,6 +96,21 @@ export default function App() {
     api.select({ kind: "elements", id: `${viewId}::elements`, viewId, elements });
   }, [manifest, select, setState]);
 
+  const openFocus = (id: string) => {
+    setFocusDevice(manifest?.viewport === "mobile" ? "mobile" : "desktop");
+    setTab("canvas");
+    if (selection?.kind === "view" ? selection.id !== id : !(selection && "viewId" in selection && (selection as { viewId: string }).viewId === id)) select(id);
+    setFocusId(id);
+  };
+  const focusSection = (viewId: string, index: number | null, section?: PageSection, list?: PageSection[]) => {
+    if (index === null) return select(viewId);
+    const id = `${viewId}::${index}`;
+    const view = manifest?.views.find((v) => v.id === viewId);
+    // Shown at once; the server fills in the code behind it
+    setState((s) => ({ ...s, selection: { kind: "section", id, viewId, viewName: view?.name ?? viewId, name: section?.name ?? `Section ${index + 1}`, device: focusDevice } as never }));
+    api.select({ kind: "section", id, device: focusDevice, live: section, liveList: list });
+  };
+
   const openView = (id: string) => {
     setTab("canvas");
     select(id);
@@ -128,7 +148,7 @@ export default function App() {
         {/* The work fills the window; tools float above it */}
         <main className="absolute inset-0">
           {tab === "canvas" ? (
-            <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} agents={agents} edits={edits} snapshots={snapshots} selection={selection} onPickElements={pickElements} insetLeft={insetLeft} findingCounts={findingCounts} inspectingId={inspectingId} insetRight={insetRight} commenting={commenting} onCommenting={toggleCommenting} comments={comments} activeComment={activeComment} onShowComment={showComment} />
+            <CanvasView ref={canvas} manifest={manifest} selectedId={selectedId} onSelect={select} frames={frames} agents={agents} edits={edits} snapshots={snapshots} selection={selection} onPickElements={pickElements} insetLeft={insetLeft} findingCounts={findingCounts} inspectingId={inspectingId} insetRight={insetRight} commenting={commenting} onCommenting={toggleCommenting} comments={comments} activeComment={activeComment} onShowComment={showComment} onOpenFocus={openFocus} />
           ) : (
             <div className="absolute inset-0 pt-[68px]" style={{ paddingLeft: insetLeft, paddingRight: insetRight }}>
               {tab === "sections" ? (
@@ -149,7 +169,15 @@ export default function App() {
               )}
             </div>
           )}
-          {panel !== "claude" && <PromptBar
+          {focusId && tab === "canvas" && (
+            <PageFocus
+              manifest={manifest} viewId={focusId} device={focusDevice} chat={chat} agents={agents} edits={edits}
+              selection={selection} scopeName={scopeName} target={target} insetLeft={insetLeft} insetRight={insetRight}
+              onView={(id) => { setFocusId(id); select(id); }} onDevice={setFocusDevice} onClose={() => setFocusId(null)}
+              onSection={focusSection} onElements={pickElements} onConcepts={setConceptId}
+            />
+          )}
+          {panel !== "claude" && !(focusId && tab === "canvas") && <PromptBar
             chat={chat}
             agents={agents}
             selection={selection}

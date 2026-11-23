@@ -36,6 +36,8 @@ export type CanvasCtx = {
   /** The view the helper buddy is looking at right now */
   inspectingId: string | null;
   setInteractive: (id: string | null) => void;
+  /** Open a page up close, to click a section and prompt about it */
+  openFocus: (id: string) => void;
   rename: (id: string, name: string) => void;
   setParam: (route: string, url: string) => void;
   /** Comment mode: clicking a page pins a comment there */

@@ -9,8 +9,17 @@ const GROUPS: { title: string; items: [string, string[]][] }[] = [
     ["Show the whole project", ["⇧", "1"]],
     ["Zoom to the view in the center", ["⇧", "2"]],
     ["Step out of a section, then the page", ["Esc"]],
-    ["Interact with a page", ["Double-click"]],
+    ["Open a page up close", ["Double-click"]],
+    ["Open the selected page up close", ["Enter"]],
+    ["Pin a comment", ["C"]],
     ["Rename a view", ["Double-click its name"]],
+  ] },
+  { title: "A page up close", items: [
+    ["Prompt about a section", ["Click it"]],
+    ["Previous or next section", ["↑", "↓"]],
+    ["Pick a single element", ["⌥", "Click"]],
+    ["Use the page as normal", [MOD, "Click"]],
+    ["Back out", ["Esc"]],
   ] },
   { title: "Prompting", items: [
     ["Write a prompt", [MOD, "K"]],

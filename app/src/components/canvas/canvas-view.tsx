@@ -49,6 +49,7 @@ type Props = {
   activeComment?: string | null;
   onShowComment?: (c: CanvasComment) => void;
   onCommenting?: (on: boolean) => void;
+  onOpenFocus?: (id: string) => void;
   ref?: Ref<CanvasHandle>;
 };
 
@@ -63,7 +64,7 @@ export function CanvasView(props: Props) {
 // Room the floating tools take: tabs on top, canvas toolbar on the right, prompt bar at the bottom
 const BASE_INSET = { top: 76, right: 72, bottom: 156 };
 
-function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, onPickElements, insetLeft = 12, findingCounts = {}, inspectingId = null, insetRight = 0, commenting = false, comments = [], activeComment = null, onShowComment = () => {}, onCommenting = () => {}, ref }: Props) {
+function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, snapshots, selection, onPickElements, insetLeft = 12, findingCounts = {}, inspectingId = null, insetRight = 0, commenting = false, comments = [], activeComment = null, onShowComment = () => {}, onCommenting = () => {}, onOpenFocus = () => {}, ref }: Props) {
   const INSET = { ...BASE_INSET, right: BASE_INSET.right + insetRight };
   const [draft, setDraft] = useState<CommentDraft | null>(null);
   useEffect(() => { if (!commenting) setDraft(null); }, [commenting]);
@@ -233,6 +234,7 @@ function CanvasInner({ manifest, selectedId, onSelect, frames, agents, edits, sn
     inspectingId,
     selectSection: (viewId, index) => onSelect(index === null ? viewId : `${viewId}::${index}`, index === null ? undefined : { device }),
     setInteractive,
+    openFocus: (id) => { setInteractive(null); setPicking(null); onOpenFocus(id); },
     rename: (id, name) => api.config({ names: { [id]: name } }),
     setParam: (route, url) => api.config({ params: { [route]: url } }),
     commenting, comments: comments.filter((x) => x.device === device && x.status !== "resolved"), activeComment, showComment: onShowComment, draft, setDraft,

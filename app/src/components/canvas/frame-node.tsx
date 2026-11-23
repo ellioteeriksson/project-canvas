@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { Browser, DeviceMobile, FolderSimple, CursorClick, LinkBreak, WarningCircle, CircleNotch, Warning, Sparkle, ArrowClockwise, SelectionPlus } from "@phosphor-icons/react";
+import { Browser, DeviceMobile, FolderSimple, CursorClick, LinkBreak, WarningCircle, CircleNotch, Warning, Sparkle, ArrowClockwise, ArrowsOut } from "@phosphor-icons/react";
 import type { Agent } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { api, frameUrl, snapshotKey, useSnapshotEngine } from "@/lib/api";
@@ -251,7 +251,7 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
         )}
         style={{ width: f.w, height: cardH }}
         onClick={(e) => { if (!interactive) { e.stopPropagation(); c.select(v.id); } }}
-        onDoubleClick={(e) => { e.stopPropagation(); if (v.url) c.setInteractive(v.id); }}
+        onDoubleClick={(e) => { e.stopPropagation(); if (v.url) c.openFocus(v.id); }}
       >
         {!v.url ? (
           <NeedsParam route={v.route} />
@@ -390,10 +390,10 @@ export const FrameNode = memo(function FrameNode({ data, sourcePosition, targetP
           >
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); c.setPicking(v.id); }}
-              className="flex items-center gap-1 rounded-md bg-background/95 px-2 py-1 text-[11px] font-medium shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={(e) => { e.stopPropagation(); c.openFocus(v.id); }}
+              className="flex items-center gap-1 rounded-md bg-scope px-2 py-1 text-[11px] font-medium text-white shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <SelectionPlus size={12} /> Select elements
+              <ArrowsOut size={12} weight="bold" /> Open
             </button>
             <button
               type="button"

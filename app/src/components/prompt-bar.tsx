@@ -49,10 +49,11 @@ export const liveConns = (chat: ChatState) => chat.conns.filter((c) => c.status 
 type ComposerProps = {
   to: string | null; scopeName: string | null; selection: Selection | null; onClearScope: () => void; onConcepts: (id: string) => void;
   picker?: React.ReactNode; tail?: React.ReactNode; working?: boolean; onStop?: () => void; placeholder?: string; className?: string; inputRef?: React.RefObject<HTMLTextAreaElement | null>;
+  onSent?: () => void;
 };
 
 /** Where you write a prompt: scope, concepts or straight to code, and send. */
-export function Composer({ to, scopeName, selection, onClearScope, onConcepts, picker, tail, working, onStop, placeholder, className, inputRef }: ComposerProps) {
+export function Composer({ to, scopeName, selection, onClearScope, onConcepts, picker, tail, working, onStop, placeholder, className, inputRef, onSent }: ComposerProps) {
   // Straight to code by default; 4 concepts is for when you want options first
   const [concepts, setConcepts] = useState(() => { try { return localStorage.getItem("loupe-concepts") === "on"; } catch { return false; } });
   const toggleConcepts = () => setConcepts((on) => { try { localStorage.setItem("loupe-concepts", on ? "off" : "on"); } catch {} return !on; });
@@ -77,6 +78,7 @@ export function Composer({ to, scopeName, selection, onClearScope, onConcepts, p
     setSending(false);
     if (!r.ok) return setError(r.error ?? "Couldn't send the prompt");
     if (concepts && r.prompt) onConcepts(r.prompt.id);
+    onSent?.();
     setText("");
     requestAnimationFrame(grow);
   };
