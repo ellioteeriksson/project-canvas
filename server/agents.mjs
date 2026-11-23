@@ -42,7 +42,7 @@ const summarize = (name, input = {}) => {
   return "";
 };
 
-export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, log = () => {} }) {
+export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, model = () => null, log = () => {} }) {
   const file = path.join(root, ".canvas", "agents.json");
   const exe = findClaude();
   const sessions = new Map(); // id → session
@@ -197,6 +197,7 @@ export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, 
       "--allowedTools", "mcp__loupe__canvas_reply,mcp__loupe__canvas_concepts,mcp__loupe__canvas_findings",
       "--append-system-prompt", SYSTEM,
       ...(resume ? ["--resume", resume] : []),
+      ...(model() && model() !== "default" ? ["--model", model()] : []),
     ];
     // The plugin's own hooks and MCP server stay out of the way: this session talks to Loupe directly
     const env = { ...process.env, PROJECT_CANVAS_HOOKS: "off", CLAUDE_CODE_ENTRYPOINT: "loupe" };

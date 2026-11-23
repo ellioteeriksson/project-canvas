@@ -191,6 +191,7 @@ export function scanProject(root, config = loadConfig(root)) {
     modeSource: config.mode && config.mode !== "auto" ? "config" : "auto",
     frameworkSetting: config.framework && config.framework !== "auto" ? config.framework : "auto",
     concepts: { fast: config.fastConcepts !== false, model: config.conceptModel || "sonnet" },
+    sessionModel: config.sessionModel || "sonnet",
     devUrl: config.devUrl || defaultDevUrl(root, framework) || "/__site",
     viewport: config.viewport || "desktop",
     previewRoute: config.previewRoute || null,

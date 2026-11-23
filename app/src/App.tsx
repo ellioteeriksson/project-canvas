@@ -287,7 +287,7 @@ export default function App() {
           onFix={async (f: Finding) => {
             // Scope the fix to its page when it's about one page
             await api.select(f.views.length === 1 ? { kind: "view", id: f.views[0] } : null);
-            const conn = chat.conns.find((c) => c.status !== "offline");
+            const conn = chat.conns.find((c) => c.status !== "offline" && c.managed) ?? chat.conns.find((c) => c.status !== "offline");
             await api.prompt(f.fix, managed.length > 1 ? "auto" : conn?.id ?? null, "direct");
           }}
           onFixMany={async (fs: Finding[]) => {

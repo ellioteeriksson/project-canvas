@@ -39,8 +39,9 @@ export function resolveTarget(conns: ChatConn[], target: string | null) {
   const managed = conns.filter((c) => c.managed);
   const picked = target && target !== AUTO ? conns.find((c) => c.id === target) ?? null : null;
   if (picked) return { id: picked.id, conn: picked, auto: false };
-  if (managed.length > 1 && (target === AUTO || !conns.some((c) => !c.managed))) return { id: AUTO, conn: null, auto: true };
-  const first = conns[0] ?? null;
+  // Loupe's own sessions come first; a terminal chat only when you pick it (or it's the only one)
+  if (managed.length > 1) return { id: AUTO, conn: null, auto: true };
+  const first = managed[0] ?? conns[0] ?? null;
   return { id: first?.id ?? null, conn: first, auto: false };
 }
 export const liveConns = (chat: ChatState) => chat.conns.filter((c) => c.status !== "offline").sort((a, b) => RANK[a.status] - RANK[b.status] || b.last - a.last);
@@ -52,8 +53,9 @@ type ComposerProps = {
 
 /** Where you write a prompt: scope, concepts or straight to code, and send. */
 export function Composer({ to, scopeName, selection, onClearScope, onConcepts, picker, tail, working, onStop, placeholder, className, inputRef }: ComposerProps) {
-  const [concepts, setConcepts] = useState(() => { try { return localStorage.getItem("project-canvas-concepts") !== "off"; } catch { return true; } });
-  const toggleConcepts = () => setConcepts((on) => { try { localStorage.setItem("project-canvas-concepts", on ? "off" : "on"); } catch {} return !on; });
+  // Straight to code by default; 4 concepts is for when you want options first
+  const [concepts, setConcepts] = useState(() => { try { return localStorage.getItem("loupe-concepts") === "on"; } catch { return false; } });
+  const toggleConcepts = () => setConcepts((on) => { try { localStorage.setItem("loupe-concepts", on ? "off" : "on"); } catch {} return !on; });
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);

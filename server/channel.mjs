@@ -97,7 +97,8 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
   function defaultConn() {
     const order = { live: 0, listening: 1, busy: 2, idle: 3 };
     const list = summary().conns.filter((c) => c.status !== "offline");
-    list.sort((a, b) => order[a.status] - order[b.status] || b.last - a.last);
+    // Loupe's own sessions first, then terminal chats
+    list.sort((a, b) => (b.managed ? 1 : 0) - (a.managed ? 1 : 0) || (order[a.status] ?? 9) - (order[b.status] ?? 9) || b.last - a.last);
     return list[0]?.id || null;
   }
 

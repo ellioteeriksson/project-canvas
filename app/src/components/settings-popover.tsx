@@ -50,6 +50,20 @@ export function SettingsPopover({ manifest }: { manifest: Manifest }) {
           </div>
         </form>
         <div className="flex flex-col gap-1.5">
+          <label htmlFor="sm" className="text-[13px] font-medium">Claude in Loupe</label>
+          <select
+            id="sm"
+            value={manifest.sessionModel ?? "sonnet"}
+            onChange={(e) => api.config({ sessionModel: e.target.value })}
+            className="h-8 rounded-md border border-input bg-background px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="sonnet">Sonnet: fast (recommended)</option>
+            <option value="opus">Opus: slower, for bigger changes</option>
+            <option value="default">Your Claude Code default</option>
+          </select>
+          <p className="text-xs text-muted-foreground">For new sessions Loupe starts. Start a new one in the chat panel to switch.</p>
+        </div>
+        <div className="flex flex-col gap-1.5">
           <label htmlFor="cm" className="text-[13px] font-medium">Design concepts</label>
           <select
             id="cm"

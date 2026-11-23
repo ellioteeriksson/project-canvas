@@ -14,6 +14,8 @@ export type Manifest = {
   frameworkSetting?: string;
   /** How design concepts are made: fast (Loupe sketches 4 at once) with a model, or by the chat */
   concepts?: { fast: boolean; model: string };
+  /** Model for the Claude Code sessions Loupe runs */
+  sessionModel?: string;
   devUrl: string; frameUrl?: string; viewport: "desktop" | "mobile"; previewRoute: string | null;
   frameHeight: "viewport" | "full"; frameConcurrency: number; frameLayer: "live" | "wireframe";
   changedAt: Record<string, number>; globalFiles: string[];

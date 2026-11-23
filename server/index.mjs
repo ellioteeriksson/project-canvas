@@ -271,6 +271,7 @@ hub.setConceptEngine({ ...conceptEngine, available: () => loadConfig(ROOT).fastC
 /* ---------------- Claude Code sessions Loupe runs itself ---------------- */
 const claudes = createAgents({
   root: ROOT, hub, broadcast: (e, d) => broadcast(e, d),
+  model: () => loadConfig(ROOT).sessionModel || "sonnet",
   recordActivity: (ev) => recordActivity(ev),
   serverUrl: () => readState().url,
   log: (m) => console.log(`[loupe] claude: ${m}`),
@@ -463,9 +464,8 @@ async function handle(req, res) {
     const b = await readBody(req);
     if (p === "/api/managed/permission") return send(res, 200, await claudes.permission(b.conn, b));
     if (p === "/api/managed/ensure") {
-      // Opening a project in the app: start a session unless a chat is already connected
-      const open = hub.summary().conns.filter((c) => c.status !== "offline");
-      if (open.length || !claudes.available()) return send(res, 200, { ok: true, started: false, available: claudes.available() });
+      // Opening a project in the app: make sure one of Loupe's own sessions is running (terminal chats don't count)
+      if (claudes.list().length || !claudes.available()) return send(res, 200, { ok: true, started: false, available: claudes.available() });
       const prev = b.resume !== false ? claudes.previous()[0] : null;
       const r = claudes.start({ resume: prev?.claudeSession, label: prev?.label });
       return send(res, r.ok ? 200 : 400, { ...r, started: r.ok });
