@@ -108,7 +108,7 @@ The canvas has a prompt bar that sends prompts to a Claude Code chat open in the
 
 ### Sessions Loupe runs itself
 
-In the Loupe app (or from the chat panel), Loupe can start Claude Code sessions in the project: `claude -p` with streaming JSON, `--permission-mode acceptEdits`, and Loupe's MCP server in managed mode. In such a session the plugin's hooks are off, prompts arrive directly as `<canvas-prompt>` messages, and there is no `canvas_wait` or `canvas_stop_listening`. Answer with `canvas_reply`, `canvas_concepts` or `canvas_findings` as usual. Shell commands and other tools that need approval are asked of the user in Loupe through the `canvas_permission` tool, which Claude Code calls itself.
+From the canvas's chat panel, Loupe can start Claude Code sessions in the project: `claude -p` with streaming JSON, `--permission-mode acceptEdits`, and Loupe's MCP server in managed mode. In such a session the plugin's hooks are off, prompts arrive directly as `<canvas-prompt>` messages, and there is no `canvas_wait` or `canvas_stop_listening`. Answer with `canvas_reply`, `canvas_concepts` or `canvas_findings` as usual. Shell commands and other tools that need approval are asked of the user in Loupe through the `canvas_permission` tool, which Claude Code calls itself.
 
 ### Concepts made by Loupe
 
