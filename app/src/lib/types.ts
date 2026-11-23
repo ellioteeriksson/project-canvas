@@ -12,6 +12,8 @@ export type Manifest = {
   mode: "sitemap" | "flow"; modeSource: "auto" | "config";
   /** What's chosen in .canvas/config.json, "auto" when detected */
   frameworkSetting?: string;
+  /** How design concepts are made: fast (Loupe sketches 4 at once) with a model, or by the chat */
+  concepts?: { fast: boolean; model: string };
   devUrl: string; frameUrl?: string; viewport: "desktop" | "mobile"; previewRoute: string | null;
   frameHeight: "viewport" | "full"; frameConcurrency: number; frameLayer: "live" | "wireframe";
   changedAt: Record<string, number>; globalFiles: string[];
@@ -70,11 +72,13 @@ export type CanvasComment = {
   x: number; y: number; section: { index: number; name: string } | null; text: string; promptId?: string; reply?: string | null; resolvedAt?: number | null;
 };
 export type CanvasPrompt = {
-  id: string; conn: string; session: string | null; text: string; scope: string;
-  status: "queued" | "sending" | "delivered" | "done" | "failed" | "cancelled" | "concepts" | "findings";
+  id: string; conn: string | null; session: string | null; text: string; scope: string;
+  status: "queued" | "sending" | "delivered" | "done" | "failed" | "cancelled" | "concepts" | "findings" | "sketching";
+  /** Fast concepts sketched by Loupe: each slot is pending, ready or failed, and concepts holds nulls until ready */
+  slots?: ("pending" | "ready" | "failed")[]; slotErrors?: Record<number, string>; sketch?: { stage: string; at: number }; fast?: boolean;
   mode?: "direct" | "concepts" | "apply" | "audit";
   findings?: { rule: string | null; severity: "error" | "warning" | "info"; title: string; detail: string | null; route: string | null; file: string | null; fix: string | null }[]; parent?: string | null; applied?: string;
-  concepts?: Concept[]; chosen?: { index: number; comment: string | null; at: number };
+  concepts?: (Concept | null)[]; chosen?: { index: number; comment: string | null; at: number };
   info?: { viewId: string; url: string; device: "desktop" | "mobile"; section: number | null; selectors: string[] } | null;
   via?: "live" | "listen" | "stop" | "prompt"; reply?: string; note?: string; at: number; deliveredAt?: number; doneAt?: number;
 };

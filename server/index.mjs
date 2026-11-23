@@ -22,6 +22,7 @@ import { createShooter } from "./shooter.mjs";
 import { createAgents } from "./agents.mjs";
 import { createHistory } from "./history.mjs";
 import { createComments } from "./comments.mjs";
+import { createConceptEngine } from "./conceptgen.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(HERE, "..", "app", "dist");
@@ -188,6 +189,8 @@ const changelog = createChangelog({ root: ROOT, broadcast: (e, d) => broadcast(e
 
 const comments = createComments({ root: ROOT, broadcast: (e, d) => broadcast(e, d) });
 
+
+
 /* ---------------- before/after pictures of each change ---------------- */
 const shotDevice = () => (manifest?.viewport === "mobile" ? "mobile" : "desktop");
 /** Views a change touched; a change to global styles counts for the first few pages */
@@ -254,6 +257,16 @@ const hub = createChannelHub({
   },
   isBusy: (session) => [...agents.values()].some((a) => a.session === session),
 });
+
+// Concepts are sketched by Loupe itself, 4 at once, unless the project turns it off
+const conceptEngine = createConceptEngine({
+  root: ROOT, shooter, hub,
+  pageUrl: (info) => { const base = manifest?.frameUrl || manifest?.devUrl; return base && info?.url ? base.replace(/\/$/, "") + (info.url.startsWith("/") ? info.url : "/" + info.url) : null; },
+  model: () => loadConfig(ROOT).conceptModel || "sonnet",
+  log: (m) => console.log(`[loupe] ${m}`),
+});
+// The setting is read on every request, so changing it applies straight away
+hub.setConceptEngine({ ...conceptEngine, available: () => loadConfig(ROOT).fastConcepts !== false && conceptEngine.available() });
 
 /* ---------------- Claude Code sessions Loupe runs itself ---------------- */
 const claudes = createAgents({

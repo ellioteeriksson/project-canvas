@@ -272,7 +272,8 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
 
   function createPrompt({ conn, text, mode = "direct", scope, body, parent, tailOverride }) {
     const target = conn && conns.get(conn)?.res ? conn : defaultConn();
-    if (!target) return { ok: false, error: "No Claude Code chat is open in this project" };
+    const fast = mode === "concepts" && !!engine?.available();
+    if (!target && !fast) return { ok: false, error: "No Claude Code chat is open in this project" };
     const id = crypto.randomBytes(3).toString("hex");
     const tail = tailOverride ? tailOverride(id) : mode === "concepts" ? conceptInstructions(id, scope.info) : REPLY(id);
     const full = [`<canvas-prompt prompt_id="${id}">`, body ?? text, `</canvas-prompt>`, "", scope.scope, "", typeof tail === "function" ? tail(id) : tail].join("\n");
@@ -281,7 +282,11 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
       scope: scope.label, scopeText: scope.scope, info: scope.info || null, status: "queued", at: now(), full,
     };
     prompts.push(p);
-    route(p);
+    if (fast) {
+      Object.assign(p, { status: "sketching", concepts: [null, null, null, null], slots: ["pending", "pending", "pending", "pending"], fast: true });
+      const previous = parent ? (prompts.find((x) => x.id === parent)?.concepts || []).map((c, i) => (c ? `${i + 1}. ${c.title}: ${c.summary}` : null)).filter(Boolean).join("\n") : "";
+      engine.run(p, { request: body ?? text, previous }).then((ok) => { if (!ok) conceptFallback(p); }, () => conceptFallback(p));
+    } else route(p);
     changed();
     const { full: _f, ...pub } = p;
     return { ok: true, prompt: pub };
@@ -294,20 +299,49 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
   }
 
   /* ---------- design concepts ---------- */
+  const str = (v, n) => String(v ?? "").slice(0, n);
+  const cleanConcept = (c, i) => ({
+    title: str(c?.title, 80) || `Concept ${i + 1}`,
+    summary: str(c?.summary, 500),
+    css: str(c?.css, 30_000),
+    replace: (Array.isArray(c?.replace) ? c.replace : []).slice(0, 10).map((r) => ({ selector: str(r?.selector, 300), html: str(r?.html, 60_000) })),
+  });
   function concepts(connId, id, list) {
     const p = prompts.find((x) => x.id === id);
     if (!p) return { ok: false, error: `No canvas prompt with id ${id}` };
     if (!Array.isArray(list) || !list.length) return { ok: false, error: "Send at least one concept" };
-    const str = (v, n) => String(v ?? "").slice(0, n);
-    p.concepts = list.slice(0, 6).map((c, i) => ({
-      title: str(c?.title, 80) || `Concept ${i + 1}`,
-      summary: str(c?.summary, 500),
-      css: str(c?.css, 30_000),
-      replace: (Array.isArray(c?.replace) ? c.replace : []).slice(0, 10).map((r) => ({ selector: str(r?.selector, 300), html: str(r?.html, 60_000) })),
-    }));
+    p.concepts = list.slice(0, 6).map(cleanConcept);
     Object.assign(p, { status: "concepts", doneAt: now() });
     changed();
     return { ok: true };
+  }
+
+  /* Fast concepts: Loupe sketches them itself (conceptgen.mjs) and they arrive one by one */
+  let engine = null;
+  const setConceptEngine = (e) => { engine = e; };
+  function conceptPart(id, index, c, error) {
+    const p = prompts.find((x) => x.id === id);
+    if (!p || p.status !== "sketching") return;
+    p.concepts[index] = c ? cleanConcept(c, index) : null;
+    p.slots[index] = c ? "ready" : "failed";
+    if (error) (p.slotErrors ||= {})[index] = str(error, 200);
+    if (p.slots.every((x) => x !== "pending")) {
+      // Failed sketches stay as empty slots, so the others keep their numbers
+      if (p.concepts.some(Boolean)) Object.assign(p, { status: "concepts", doneAt: now() });
+    }
+    changed();
+  }
+  const conceptProgress = (id, patch) => { const p = prompts.find((x) => x.id === id); if (p) { Object.assign(p, { sketch: patch }); changed(); } };
+  /** Loupe couldn't sketch them: the chat makes the concepts the usual way */
+  function conceptFallback(p) {
+    if (p.status !== "sketching") return;
+    delete p.slots; delete p.concepts; delete p.sketch;
+    p.conn = p.conn && conns.get(p.conn)?.res ? p.conn : defaultConn();
+    if (!p.conn) { Object.assign(p, { status: "failed", note: "Loupe couldn't sketch the concepts, and no Claude Code chat is open to make them" }); onEvent("failed", p, null); changed(); return; }
+    p.session = conns.get(p.conn)?.session || null;
+    p.status = "queued";
+    route(p);
+    changed();
   }
   function choose({ id, index, comment }) {
     const p = prompts.find((x) => x.id === id);
@@ -324,7 +358,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     const body = [
       `Build concept ${index + 1} (“${c.title}”) in the real code.${note ? `\nThe user's comment on it: ${note}` : ""}`,
       "",
-      `The user picked it in Loupe from your concepts for prompt ${p.id} (“${p.text}”). It was previewed with the markup and CSS below. Build the same design with the project's own components, styling approach and tokens, rather than pasting the preview HTML. Keep to the scope below.`,
+      `The user picked it in Loupe from the concepts for prompt ${p.id} (“${p.text}”). It was previewed with the markup and CSS below. Build the same design with the project's own components, styling approach and tokens, rather than pasting the preview HTML. Keep to the scope below.`,
       "",
       code,
     ].join("\n");
@@ -337,7 +371,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     const p = prompts.find((x) => x.id === id);
     if (!p) return { ok: false, error: "That request doesn't exist any more" };
     const note = String(comment || "").trim().slice(0, 2000);
-    const prev = (p.concepts || []).map((c, i) => `${i + 1}. ${c.title}: ${c.summary}`).join("\n");
+    const prev = (p.concepts || []).map((c, i) => (c ? `${i + 1}. ${c.title}: ${c.summary}` : null)).filter(Boolean).join("\n");
     const body = [
       p.text,
       "",
@@ -390,7 +424,10 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
 
   function cancel(id) {
     const p = prompts.find((x) => x.id === id);
-    if (p && p.status === "queued") { p.status = "cancelled"; onEvent("cancelled", p, null); changed(); return { ok: true }; }
+    if (p && (p.status === "queued" || p.status === "sketching")) {
+      if (p.status === "sketching") engine?.cancel(p.id);
+      p.status = "cancelled"; onEvent("cancelled", p, null); changed(); return { ok: true };
+    }
     return { ok: false };
   }
   function verdict(requestId, behavior) {
@@ -412,5 +449,5 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     return [...conns.values()].filter((c) => c.session === session).map((c) => `conn:${c.id}`);
   }
 
-  return { attach, setManaged, detach, openPromptOf, promptById, rulesCheck, findings, connKeys, stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
+  return { setConceptEngine, conceptPart, conceptProgress, attach, setManaged, detach, openPromptOf, promptById, rulesCheck, findings, connKeys, stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
 }

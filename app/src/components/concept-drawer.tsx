@@ -60,7 +60,7 @@ function ShotFrame({ p, index, concept, base, onDone }: { p: CanvasPrompt; index
 function ShotQueue({ p, base }: { p: CanvasPrompt; base: string }) {
   useShots();
   const [running, setRunning] = useState<number[]>([]);
-  const todo = (p.concepts ?? []).map((_, i) => i).filter((i) => !shots.get(shotKey(p, i)));
+  const todo = (p.concepts ?? []).map((c, i) => (c ? i : -1)).filter((i) => i >= 0 && !shots.get(shotKey(p, i)));
   useEffect(() => {
     // Two at a time keeps the dev server and the browser responsive
     if (running.length >= 2) return;
@@ -71,7 +71,7 @@ function ShotQueue({ p, base }: { p: CanvasPrompt; base: string }) {
   return (
     <>
       {running.map((i) => (
-        <ShotFrame key={`${p.id}-${i}`} p={p} index={i} concept={p.concepts![i]} base={base} onDone={() => setRunning((r) => r.filter((x) => x !== i))} />
+        <ShotFrame key={`${p.id}-${i}`} p={p} index={i} concept={p.concepts![i]!} base={base} onDone={() => setRunning((r) => r.filter((x) => x !== i))} />
       ))}
     </>
   );
@@ -101,7 +101,10 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose, collaps
   useEffect(() => setCollapsed(false), [id]);
 
   if (!p) return null;
-  const ready = p.status === "concepts" && p.concepts?.length;
+  // Fast concepts arrive one at a time: show each as soon as it's ready
+  const sketching = p.status === "sketching";
+  const ready = (p.status === "concepts" || (sketching && p.concepts?.some(Boolean))) && p.concepts?.length;
+  const anyChat = chat.conns.some((c) => c.status !== "offline");
   const chosen = p.chosen?.index;
   const choose = async (i: number) => {
     setBusy(true); setError(null);
@@ -120,7 +123,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose, collaps
   const working = agent ? `${({ thinking: "Thinking", reading: "Reading", editing: "Editing", running: "Running" } as const)[agent.phase]} ${agent.file?.split("/").pop() ?? ""}`.trim() : null;
 
   if (collapsed) {
-    const n = p.concepts?.length ?? 0;
+    const n = p.concepts?.filter(Boolean).length ?? 0;
     return (
       <>
         <button
@@ -166,7 +169,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose, collaps
               {p.status === "failed" || p.status === "cancelled" ? (
                 <><Warning size={14} /> {p.note ?? "Claude didn't make concepts for this request"}</>
               ) : (
-                <><Sparkle size={14} weight="fill" className="agent-dot text-[var(--agent)]" /> {p.status === "queued" ? (conn?.status === "busy" ? "Waiting for Claude to finish what it's doing" : "Waiting for the chat to pick this up") : working ?? "Claude is sketching 4 concepts"}</>
+                <><Sparkle size={14} weight="fill" className="agent-dot text-[var(--agent)]" /> {sketching ? (p.sketch ? "Sketching 4 concepts at once" : "Reading the page") : p.status === "queued" ? (conn?.status === "busy" ? "Waiting for Claude to finish what it's doing" : "Waiting for the chat to pick this up") : working ?? "Claude is sketching 4 concepts"}</>
               )}
             </p>
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
@@ -176,6 +179,13 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose, collaps
         ) : (
           <ol className="grid grid-cols-1 gap-5 md:grid-cols-2">
             {p.concepts!.map((c, i) => {
+              if (!c)
+                return p.slots?.[i] === "failed" ? null : (
+                  <li key={i} className="flex flex-col overflow-hidden rounded-[14px] bg-card ring-1 ring-black/[0.06] dark:bg-secondary dark:ring-white/10" aria-label={`Concept ${i + 1}, still sketching`}>
+                    <div className="aspect-[4/3] animate-pulse bg-segment" />
+                    <p className="flex items-center gap-2 p-4 text-xs text-muted-foreground"><CircleNotch size={13} className="animate-spin" /> Sketching concept {i + 1}</p>
+                  </li>
+                );
               const shot = shots.get(shotKey(p, i));
               const isChosen = chosen === i;
               return (
@@ -217,7 +227,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose, collaps
                           aria-label={`Comment on concept ${i + 1}`}
                           className="mt-auto w-full resize-none rounded-[9px] border-0 bg-segment px-3 py-2 text-[13px] leading-5 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
                         />
-                        <Button size="sm" className="self-start" disabled={busy || !conn} onClick={() => choose(i)}>
+                        <Button size="sm" className="self-start" disabled={busy || !anyChat} title={!anyChat ? "Start Claude to build a concept" : undefined} onClick={() => choose(i)}>
                           <Check size={14} weight="bold" /> Use this
                         </Button>
                       </>
@@ -232,7 +242,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose, collaps
         {error && <p className="mt-4 text-[13px] text-destructive">{error}</p>}
       </div>
 
-      {ready && chosen === undefined && (
+      {ready && !sketching && chosen === undefined && (
         <footer className="flex items-end gap-2 border-t px-6 py-4">
           <textarea
             rows={1}
@@ -243,7 +253,7 @@ export function ConceptDrawer({ id, chat, agents, base, onOpen, onClose, collaps
             aria-label="Feedback for a new round of concepts"
             className="min-h-9 flex-1 resize-none rounded-[9px] border-0 bg-segment px-3 py-2 text-[13px] leading-5 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/25"
           />
-          <Button variant="outline" disabled={busy || !conn} onClick={again}><ArrowsClockwise size={14} /> 4 new concepts</Button>
+          <Button variant="outline" disabled={busy || sketching} onClick={again}><ArrowsClockwise size={14} /> 4 new concepts</Button>
         </footer>
       )}
 

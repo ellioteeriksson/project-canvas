@@ -337,8 +337,19 @@ export function PromptState({ p, conns, agents, compact, onConcepts }: { p: Canv
   const agent = session ? agents.filter((a) => a.session === session).sort((a, b) => b.last - a.last)[0] : undefined;
   const lead = compact ? <span className="max-w-[40%] shrink-0 truncate font-medium">{p.text}</span> : null;
 
+  if (p.status === "sketching") {
+    const ready = p.slots?.filter((x) => x === "ready").length ?? 0;
+    return (
+      <div className="flex min-w-0 items-center gap-2 text-xs" aria-live="polite">
+        {lead}
+        <Sparkle size={13} weight="fill" className="agent-dot shrink-0 text-[var(--agent)]" />
+        <span className="truncate">{ready ? `${ready} of 4 concepts ready` : p.sketch ? "Sketching 4 concepts" : "Reading the page"}</span>
+        {!compact && <Button variant="ghost" size="sm" className="ml-auto h-6 px-1.5 text-xs" onClick={() => onConcepts(p.id)}>Open</Button>}
+      </div>
+    );
+  }
   if (p.status === "concepts") {
-    const label = p.chosen ? `Picked “${p.concepts?.[p.chosen.index]?.title}”` : `${p.concepts?.length ?? 4} concepts ready to pick from`;
+    const label = p.chosen ? `Picked “${p.concepts?.[p.chosen.index]?.title}”` : `${p.concepts?.filter(Boolean).length ?? 4} concepts ready to pick from`;
     return (
       <div className="flex min-w-0 items-center gap-2 text-xs">
         {lead}

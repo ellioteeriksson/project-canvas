@@ -49,6 +49,20 @@ export function SettingsPopover({ manifest }: { manifest: Manifest }) {
             <Button type="submit" variant="outline">Save</Button>
           </div>
         </form>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="cm" className="text-[13px] font-medium">Design concepts</label>
+          <select
+            id="cm"
+            value={manifest.concepts?.fast === false ? "chat" : manifest.concepts?.model ?? "sonnet"}
+            onChange={(e) => api.config(e.target.value === "chat" ? { fastConcepts: false } : { fastConcepts: true, conceptModel: e.target.value })}
+            className="h-8 rounded-md border border-input bg-background px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="sonnet">Fast: 4 at once with Sonnet</option>
+            <option value="default">4 at once with your default model</option>
+            <option value="chat">One by one in the chat (slowest)</option>
+          </select>
+          <p className="text-xs text-muted-foreground">Fast concepts are sketched by Loupe from the page itself, without reading the code. The chat builds the one you pick.</p>
+        </div>
         <Separator />
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => api.refreshSnapshots()}><Images size={14} /> Refresh snapshots</Button>

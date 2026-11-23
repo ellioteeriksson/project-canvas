@@ -625,6 +625,65 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
         const bg = getComputedStyle(document.body || document.documentElement).backgroundColor;
         return { h, sections, bg };
       },
+      /**
+       * For design concepts: the scoped part of the page as cleaned-up markup, where it sits, and the
+       * fonts and colors it uses, so concepts can be made without reading the project's code.
+       */
+      extract(scope = {}) {
+        // The whole page: its <main>, or else the tallest block in the body (not its header or footer)
+        const scoped = scopeTarget(scope);
+        let target = scoped || document.querySelector("main");
+        let selector = scoped ? "@scope" : target ? "main" : null;
+        if (!target) {
+          const kids = [...document.body.children].filter((el) => !/^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|HEADER|FOOTER|NAV)$/.test(el.tagName) && !el.hasAttribute("data-project-canvas"));
+          target = kids.sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0] || document.body;
+          selector = target === document.body ? "body" : `body > :nth-child(${[...document.body.children].indexOf(target) + 1})`;
+        }
+        const r = target.getBoundingClientRect();
+        const clone = target.cloneNode(true);
+        for (const el of clone.querySelectorAll("script, style, noscript, template, link, meta, iframe, [data-project-canvas]")) el.remove();
+        for (const el of clone.querySelectorAll("svg")) { if (el.innerHTML.length > 400) el.innerHTML = "<!-- icon -->"; }
+        for (const el of [clone, ...clone.querySelectorAll("*")]) {
+          for (const a of [...el.attributes]) {
+            const n = a.name;
+            if (/^(data-(?!testid)|on|aria-hidden$|tabindex$|jsaction|ng-|_ngcontent|wire:)/.test(n) && n !== "data-testid") el.removeAttribute(n);
+            else if ((n === "src" || n === "href" || n === "srcset" || n === "style") && a.value.length > 300) el.setAttribute(n, a.value.startsWith("data:") ? "[inline data]" : a.value.slice(0, 300) + "…");
+          }
+        }
+        let html = clone.outerHTML.replace(/<!--(?! icon)[\s\S]*?-->/g, "").replace(/\s{2,}/g, " ").replace(/>\s+</g, "><");
+        const truncated = html.length > 28000;
+        if (truncated) html = html.slice(0, 28000) + "<!-- …cut, the rest is like the above -->";
+        // What it looks like: the fonts, colors and sizes it actually uses
+        const count = (m, k) => { if (k && k !== "rgba(0, 0, 0, 0)" && k !== "transparent") m.set(k, (m.get(k) || 0) + 1); };
+        const fonts = new Map(), colors = new Map(), bgs = new Map(), sizes = new Map(), radii = new Map();
+        for (const el of [target, ...target.querySelectorAll("*")].slice(0, 600)) {
+          const cs = getComputedStyle(el);
+          if (el.childNodes.length && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) {
+            count(fonts, `${cs.fontFamily.split(",")[0].replace(/["']/g, "").trim()} ${cs.fontWeight}`);
+            count(colors, cs.color); count(sizes, cs.fontSize);
+          }
+          count(bgs, cs.backgroundColor);
+          if (cs.borderRadius !== "0px") count(radii, cs.borderRadius);
+        }
+        const top = (m, n) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
+        const vars = [];
+        try {
+          for (const sh of document.styleSheets) {
+            let rules; try { rules = sh.cssRules; } catch { continue; }
+            for (const rule of rules) {
+              if (rule.selectorText !== ":root" || !rule.style) continue;
+              for (const prop of rule.style) if (prop.startsWith("--") && vars.length < 80) vars.push(`${prop}: ${rule.style.getPropertyValue(prop).trim()}`);
+            }
+          }
+        } catch {}
+        const classes = new Set();
+        for (const el of [target, ...target.querySelectorAll("[class]")].slice(0, 300)) for (const c of el.classList) if (classes.size < 120) classes.add(c);
+        return {
+          selector, html, truncated, rect: { x: Math.round(r.left + scrollX), y: Math.round(r.top + scrollY), w: Math.round(r.width), h: Math.round(r.height) },
+          page: { title: document.title, bodyBg: getComputedStyle(document.body).backgroundColor },
+          fonts: top(fonts, 6), colors: top(colors, 8), backgrounds: top(bgs, 8), fontSizes: top(sizes, 8), radii: top(radii, 5), vars, classes: [...classes],
+        };
+      },
       /** After the browser grew to the full height: late styles get frozen too */
       async settleTall() { freezeAll(); window.scrollTo(0, 0); await settle(); return Math.min(Math.max(contentHeight(), frozenVH || 0), 16000); },
     };

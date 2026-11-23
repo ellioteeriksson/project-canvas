@@ -174,7 +174,7 @@ export function createShooter({ log = () => {} } = {}) {
   const bumpIdle = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => { if (!active) stop(); }, IDLE_MS); idleTimer.unref?.(); };
   process.on("exit", stop);
 
-  async function shootOnce({ url, device = "desktop", wire = false }) {
+  async function shootOnce({ url, device = "desktop", wire = false, extract = null }) {
     const dev = DEVICES[device] || DEVICES.desktop;
     const b = await getBrowser();
     const { targetId } = await b.call("Target.createTarget", { url: "about:blank" });
@@ -202,8 +202,19 @@ export function createShooter({ log = () => {} } = {}) {
       let helper = false;
       for (let i = 0; i < 40 && !helper; i++) { helper = await evaluate("!!window.__loupeShot"); if (!helper) await new Promise((r) => setTimeout(r, 100)); }
       const prep = helper
-        ? await evaluate(`window.__loupeShot.prepare(${JSON.stringify({ wire, minWait: 1200 })})`)
+        ? await evaluate(`window.__loupeShot.prepare(${JSON.stringify({ wire, minWait: extract ? 500 : 1200 })})`)
         : { h: Math.min(await evaluate("Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"), MAX_PX), sections: [] };
+      if (extract) {
+        // Design context for concepts: the scoped markup, styles, and a picture of it
+        if (!helper) throw new Error("The page didn't load Loupe's helper");
+        const ctx = await evaluate(`window.__loupeShot.extract(${JSON.stringify(extract)})`);
+        const { x, y, w, h: eh } = ctx.rect;
+        const ch = Math.max(40, Math.min(eh || dev.h, 2400));
+        await call("Emulation.setDeviceMetricsOverride", { width: dev.w, height: Math.max(dev.h, y + ch), deviceScaleFactor: 1, mobile: dev.mobile });
+        await new Promise((r) => setTimeout(r, 250));
+        const pic = await call("Page.captureScreenshot", { format: "jpeg", quality: 80, clip: { x: Math.max(0, x), y: Math.max(0, y), width: Math.max(40, Math.min(w || dev.w, dev.w)), height: ch, scale: 1 }, captureBeyondViewport: true });
+        return { ...ctx, image: pic.data };
+      }
       let h = Math.max(dev.h, Math.round(prep.h));
       // Grow the browser to the whole page; frozen viewport heights keep 100vh sections the same
       await call("Emulation.setDeviceMetricsOverride", { width: dev.w, height: h, deviceScaleFactor: dev.dpr, mobile: dev.mobile });
@@ -228,6 +239,12 @@ export function createShooter({ log = () => {} } = {}) {
   return {
     browser: exe ? path.basename(exe) : null,
     available: () => !!exe,
+    /** The scoped part of a page as markup, styles and a picture, for design concepts */
+    extract: (args) => new Promise((resolve, reject) => {
+      if (!exe) return reject(new Error("No Chrome, Edge, Brave or Chromium found"));
+      queue.unshift({ args: { ...args, extract: args.scope || {} }, resolve, reject });
+      pump();
+    }),
     /** Screenshot a page: resolves to { dataUrl, w, h, sections } */
     shoot: (args) => new Promise((resolve, reject) => {
       if (!exe) return reject(new Error("No Chrome, Edge, Brave or Chromium found"));
