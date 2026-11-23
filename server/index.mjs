@@ -650,7 +650,7 @@ function pushActivity() {
 
 function recordActivity(ev) {
   hub.activity(ev);
-  if (ev.phase === "hello") return;
+  if (ev.phase === "hello" || ev.phase === "step") return;
   if (ev.session && !ev.agent) {
     if (ev.prompt && !/^\/(loupe|canvas)/.test(ev.prompt)) changelog.start(ev.session, { source: "chat", prompt: ev.prompt });
     if (ev.phase === "done") { changelog.close(ev.session); hub.connKeys(ev.session).forEach((k) => changelog.close(k)); }

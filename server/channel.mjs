@@ -233,8 +233,31 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     }
     return {};
   }
+  /* ---------- live progress: what Claude is doing for a prompt ---------- */
+  let progressTimer = null;
+  function progress(id, step) {
+    const p = prompts.find((x) => x.id === id);
+    if (!p || !step || !["delivered", "sending"].includes(p.status)) return;
+    const steps = (p.steps ||= []);
+    const last = steps[steps.length - 1];
+    if (last && last.kind === step.kind && last.text === step.text) return;
+    const { plan, ...rest } = step;
+    steps.push({ ...rest, at: now() });
+    if (steps.length > 40) steps.splice(0, steps.length - 40);
+    if (plan) p.plan = plan;
+    // Coalesce bursts of steps into one update for the canvas
+    if (!progressTimer) progressTimer = setTimeout(() => { progressTimer = null; push(); }, 150);
+  }
+  function progressForSession(session, step) {
+    const p = prompts.find((x) => x.status === "delivered" && conns.get(x.conn)?.session === session);
+    if (p) progress(p.id, step);
+  }
+
   function activity(ev) {
     if (!ev?.session) return;
+    // Terminal chats report their steps through the hooks; Loupe's own sessions report them directly
+    if (ev.step && !ev.managed) progressForSession(ev.session, ev.step);
+    if (ev.phase === "step") return;
     const s = sessions.get(ev.session) || {};
     sessions.set(ev.session, { claudePid: ev.claudePid || s.claudePid, prompt: ev.prompt || s.prompt, last: now() });
     link(ev.session, ev.claudePid);
@@ -459,5 +482,5 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     return [...conns.values()].filter((c) => c.session === session).map((c) => `conn:${c.id}`);
   }
 
-  return { setConceptEngine, conceptPart, conceptProgress, attach, setManaged, detach, openPromptOf, promptById, rulesCheck, findings, connKeys, stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
+  return { progress, setConceptEngine, conceptPart, conceptProgress, attach, setManaged, detach, openPromptOf, promptById, rulesCheck, findings, connKeys, stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
 }

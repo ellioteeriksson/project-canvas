@@ -80,6 +80,7 @@ export type CanvasComment = {
   id: string; at: number; status: "open" | "sent" | "review" | "resolved"; answeredAt?: number; viewId: string; viewName: string; device: "desktop" | "mobile";
   x: number; y: number; section: { index: number; name: string } | null; text: string; promptId?: string; reply?: string | null; resolvedAt?: number | null;
 };
+export type PromptStep = { kind: "read" | "edit" | "run" | "search" | "web" | "agent" | "todo" | "say" | "think" | "wait" | "tool"; text: string; at: number };
 export type CanvasPrompt = {
   id: string; conn: string | null; session: string | null; text: string; scope: string;
   status: "queued" | "sending" | "delivered" | "done" | "failed" | "cancelled" | "concepts" | "findings" | "sketching";
@@ -90,6 +91,8 @@ export type CanvasPrompt = {
   concepts?: (Concept | null)[]; chosen?: { index: number; comment: string | null; at: number };
   info?: { viewId: string; url: string; device: "desktop" | "mobile"; section: number | null; selectors: string[] } | null;
   via?: "live" | "listen" | "stop" | "prompt"; reply?: string; note?: string; at: number; deliveredAt?: number; doneAt?: number;
+  /** What Claude has done for this prompt so far, newest last, and its plan when it keeps one */
+  steps?: PromptStep[]; plan?: { done: number; total: number };
 };
 export type PermissionRequest = { request_id: string; conn: string; tool_name: string; description: string; input_preview: string; at: number };
 export type ChatState = { conns: ChatConn[]; prompts: CanvasPrompt[]; permissions: PermissionRequest[] };

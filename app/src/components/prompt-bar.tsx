@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import type { Agent, CanvasPrompt, ChatConn, ChatState, ChatStatus, Selection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { LiveSteps, StepIcon, currentStep, stepLabel, useElapsed } from "@/components/live-steps";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export const STATUS: Record<ChatStatus, { word: string; hint: string }> = {
@@ -390,19 +391,17 @@ export function PromptState({ p, conns, agents, compact, onConcepts }: { p: Canv
           <span className="truncate">The chat closed without answering</span>
         </div>
       );
-    if (p.mode === "concepts" && !agent) return (
-      <div className="flex min-w-0 items-center gap-2 text-xs" aria-live="polite">
-        {lead}
-        <Sparkle size={13} weight="fill" className="agent-dot shrink-0 text-[var(--agent)]" />
-        <span className="truncate">Claude is sketching concepts</span>
-      </div>
-    );
-    const what = agent ? `${PHASE[agent.phase]} ${agent.phase === "running" ? agent.command ?? "" : agent.file?.split("/").pop() ?? ""}`.trim() : "Claude is on it";
+    if (!compact && p.steps?.length) return <LiveSteps p={p} />;
+    const step = currentStep(p);
+    const what = step ? stepLabel(step)
+      : p.mode === "concepts" ? "Claude is sketching concepts"
+      : agent ? `${PHASE[agent.phase]} ${agent.phase === "running" ? agent.command ?? "" : agent.file?.split("/").pop() ?? ""}`.trim() : "Claude is on it";
     return (
       <div className="flex min-w-0 items-center gap-2 text-xs" aria-live="polite">
         {lead}
-        <Sparkle size={13} weight="fill" className="agent-dot shrink-0 text-[var(--agent)]" />
+        {step ? <StepIcon kind={step.kind} className="text-[var(--agent)]" /> : <Sparkle size={13} weight="fill" className="agent-dot shrink-0 text-[var(--agent)]" />}
         <span className="truncate">{what}</span>
+        <Elapsed since={p.deliveredAt ?? p.at} />
       </div>
     );
   }
@@ -410,7 +409,7 @@ export function PromptState({ p, conns, agents, compact, onConcepts }: { p: Canv
     <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
       {lead}
       <StatusDot status={conn?.status ?? "offline"} />
-      <span className="truncate">{p.status === "sending" ? "Sending…" : conn?.status === "busy" ? "Waiting for Claude to finish" : "Waiting for the chat"}</span>
+      <span className="truncate">{conn?.status === "busy" ? "Next up, once Claude finishes what it's on" : p.status === "sending" ? "Sending…" : "Waiting for the chat"}</span>
       {p.status === "queued" && !compact && (
         <Button variant="ghost" size="sm" className="ml-auto h-6 px-1.5 text-xs" onClick={() => api.cancelPrompt(p.id)}>
           <X size={12} /> Cancel
@@ -418,6 +417,11 @@ export function PromptState({ p, conns, agents, compact, onConcepts }: { p: Canv
       )}
     </div>
   );
+}
+
+function Elapsed({ since }: { since: number }) {
+  const t = useElapsed(since);
+  return <span className="shrink-0 tabular-nums text-muted-foreground">{t}</span>;
 }
 
 export function PermissionCard({ p }: { p: { request_id: string; tool_name: string; description: string; input_preview: string } }) {

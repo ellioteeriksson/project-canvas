@@ -5,6 +5,7 @@
 import path from "node:path";
 import { readStdin, activeCanvas } from "./lib.mjs";
 import { sessionClaudePid } from "./proc.mjs";
+import { stepForTool } from "../server/steps.mjs";
 
 const input = await readStdin();
 const c = activeCanvas(input.cwd);
@@ -22,6 +23,8 @@ else if (event === "PreToolUse") {
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool)) phase = "editing";
   else if (tool === "Read") phase = "reading";
   else if (tool === "Bash") phase = "running";
+  else if (/^(Grep|Glob)$/.test(tool)) phase = "reading";
+  else phase = "step";
 } else if (event === "PostToolUse" && /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(tool)) phase = "edited";
 else if (event === "Stop" || event === "SubagentStop") phase = "done";
 if (!phase) process.exit(0);
@@ -35,6 +38,7 @@ const body = {
   file: file ? path.relative(c.root, path.resolve(input.cwd || c.root, file)).split(path.sep).join("/") : null,
   command: tool === "Bash" ? String(ti.description || ti.command || "").slice(0, 80) : null,
   at: Date.now(),
+  step: event === "PreToolUse" ? stepForTool(tool, ti, c.root) : undefined,
   // Which Claude Code process this is, so the canvas can pair the session with its prompt channel
   claudePid: sessionClaudePid(input.session_id),
   prompt: event === "UserPromptSubmit" ? String(input.prompt || "").replace(/\s+/g, " ").slice(0, 400) : undefined,

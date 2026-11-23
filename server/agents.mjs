@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { stepForTool, stepForText } from "./steps.mjs";
 import crypto from "node:crypto";
 import { spawn, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -131,11 +132,14 @@ export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, 
     if (m.type === "system" && m.subtype === "api_retry") { emit(s, { kind: "note", text: `Retrying (${m.error || "error"})…` }); return; }
     if (m.type === "assistant" && m.message?.content) {
       if (m.parent_tool_use_id) return; // subagent detail stays out of the chat
+      const open = hub.openPromptOf(s.id);
       for (const b of m.message.content) {
-        if (b.type === "text" && b.text?.trim()) emit(s, { kind: "text", text: b.text });
+        if (b.type === "text" && b.text?.trim()) { emit(s, { kind: "text", text: b.text }); if (open) hub.progress(open.id, stepForText(b.text)); }
+        if (b.type === "thinking" && open) hub.progress(open.id, { kind: "think", text: "Thinking it through" });
         if (b.type === "tool_use") {
           const name = b.name || "";
           if (name === "mcp__loupe__canvas_permission") continue;
+          if (open) hub.progress(open.id, stepForTool(name, b.input, root));
           const detail = summarize(name, b.input);
           emit(s, { kind: "tool", name, detail, toolId: b.id });
           if (!s.claudeSession) continue;
@@ -282,6 +286,8 @@ export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, 
       : `Use ${tool.replace(/^mcp__/, "").replace(/__/g, " › ")}`;
     hub.permissionRequest(connId, { request_id, tool_name: tool, description, input_preview: detail || JSON.stringify(input).slice(0, 1500) });
     emit(s, { kind: "ask", requestId: request_id, tool, detail: description + (detail ? `: ${detail}` : "") });
+    const open = hub.openPromptOf(s.id);
+    if (open) hub.progress(open.id, { kind: "wait", text: `Waiting for you to allow: ${description}` });
     setState(s, "waiting");
     return new Promise((resolve) => {
       const t = setTimeout(() => { waiters.delete(request_id); resolve("deny"); }, 30 * 60_000);

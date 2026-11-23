@@ -5,6 +5,7 @@ import type { Agent, ChatState, Manifest, PageSection, PickedElement, Selection 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
+import { LiveSteps } from "@/components/live-steps";
 import { Composer, PermissionCard, PromptState, liveConns, resolveTarget } from "@/components/prompt-bar";
 
 const host = (w: Window | null | undefined, msg: Record<string, unknown>) => { try { w?.postMessage({ source: "project-canvas-host", ...msg }, "*"); } catch {} };
@@ -181,7 +182,7 @@ export function PageFocus(p: Props) {
 
           {/* Claude asking for permission shows up here too, since the prompt bar is hidden */}
           {p.chat.permissions.length > 0 && (
-            <div className="absolute right-4 bottom-4 z-30 flex w-[min(520px,90%)] flex-col gap-2">
+            <div className="absolute right-24 bottom-4 z-30 flex w-[min(520px,80%)] flex-col gap-2">
               {p.chat.permissions.map((x) => <PermissionCard key={x.request_id} p={x} />)}
             </div>
           )}
@@ -198,11 +199,22 @@ export function PageFocus(p: Props) {
                 placeholder={to.id ? `What should change in ${p.scopeName ?? "this section"}?` : "Open Claude Code in this project (/loupe) to prompt"}
                 onSent={() => setSentAt(Date.now())}
               />
-              {latest && (
+              {latest && latest.status === "delivered" && latest.steps?.length ? (
+                <div className="island rounded-[14px] px-3.5 py-2.5">
+                  <LiveSteps p={latest} />
+                </div>
+              ) : latest && (
                 <div className="island flex items-center gap-2 self-start rounded-full py-1.5 pr-3.5 pl-3 text-xs">
                   <PromptState p={latest} conns={p.chat.conns} agents={p.agents} compact onConcepts={p.onConcepts} />
                 </div>
               )}
+            </div>
+          ) : latest && ["queued", "sending", "delivered"].includes(latest.status) ? (
+            // Claude is still on it: keep showing what it's doing, even with no section picked
+            <div className="island absolute bottom-5 left-5 z-20 w-[min(440px,42%)] rounded-[14px] px-3.5 py-2.5">
+              {latest.steps?.length ? (
+                <><p className="mb-1 truncate text-xs font-medium">{latest.text}</p><LiveSteps p={latest} /></>
+              ) : <PromptState p={latest} conns={p.chat.conns} agents={p.agents} compact onConcepts={p.onConcepts} />}
             </div>
           ) : (
             <p className="pointer-events-none absolute bottom-6 left-1/2 z-20 -translate-x-1/2 rounded-full bg-foreground/85 px-4 py-2 text-[13px] text-background shadow-lg">
