@@ -269,7 +269,7 @@ const conceptEngine = createConceptEngine({
   log: (m) => console.log(`[loupe] ${m}`),
 });
 // The setting is read on every request, so changing it applies straight away
-hub.setConceptEngine({ ...conceptEngine, available: () => loadConfig(ROOT).fastConcepts !== false && conceptEngine.available() });
+hub.setConceptEngine({ ...conceptEngine, available: () => loadConfig(ROOT).fastConcepts === true && conceptEngine.available() });
 
 /* ---------------- Claude Code sessions Loupe runs itself ---------------- */
 const claudes = createAgents({

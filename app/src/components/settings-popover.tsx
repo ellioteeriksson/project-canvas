@@ -67,15 +67,15 @@ export function SettingsPopover({ manifest }: { manifest: Manifest }) {
           <label htmlFor="cm" className="text-[13px] font-medium">Design concepts</label>
           <select
             id="cm"
-            value={manifest.concepts?.fast === false ? "chat" : manifest.concepts?.model ?? "sonnet"}
+            value={manifest.concepts?.fast ? manifest.concepts?.model ?? "sonnet" : "chat"}
             onChange={(e) => api.config(e.target.value === "chat" ? { fastConcepts: false } : { fastConcepts: true, conceptModel: e.target.value })}
             className="h-8 rounded-md border border-input bg-background px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <option value="sonnet">Fast: 4 at once with Sonnet</option>
-            <option value="default">4 at once with your default model</option>
-            <option value="chat">One by one in the chat (slowest)</option>
+            <option value="chat">In your connected chat (recommended)</option>
+            <option value="sonnet">Separately, 4 at once with Sonnet</option>
+            <option value="default">Separately, 4 at once with your default model</option>
           </select>
-          <p className="text-xs text-muted-foreground">Fast concepts are sketched by Loupe from the page itself, without reading the code. The chat builds the one you pick.</p>
+          <p className="text-xs text-muted-foreground">The chat gets the section as it renders, so it can sketch right away, and builds the one you pick. Separately starts extra Claude Code runs in the background.</p>
         </div>
         <Separator />
         <div className="flex flex-wrap gap-2">

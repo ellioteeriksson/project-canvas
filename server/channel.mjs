@@ -76,7 +76,7 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     for (const c of conns.values()) if (c.claudePid === claudePid && c.session !== session) { c.session = session; push(); }
   }
   function nextQueued(connId) {
-    return prompts.find((p) => p.conn === connId && p.status === "queued");
+    return prompts.find((p) => p.conn === connId && p.status === "queued" && !p.preparing);
   }
   function deliver(p, via) {
     Object.assign(p, { status: "delivered", via, deliveredAt: now() });
@@ -259,8 +259,8 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
       : info?.selectors?.length ? `the selected element${info.selectors.length > 1 ? `s ("@element:1" … "@element:${info.selectors.length}", "@scope" is the first)` : ` (selector "@scope")`}`
       : null;
     return [
-      `This is a design request from Loupe. Don't edit any project files yet: propose 4 visual concepts first.`,
-      `1. Read the code behind the scope above, so the concepts fit the existing page and design system.`,
+      `This is a design request from Loupe. Don't edit any project files yet: propose 4 visual concepts first. Be quick: the user is waiting on the canvas.`,
+      `1. Work from the rendered markup and styles given above when they're there; open a project file only if you really need it. Don't run builds, tests, servers or screenshots for this.`,
       `2. Call the canvas_concepts tool once, with prompt_id "${id}" and exactly 4 concepts that differ clearly from each other (layout, hierarchy, type, color or imagery, not only copy). Give each a short title and a one-sentence summary.`,
       `   Each concept is previewed by changing the live page ${info?.url ? `${info.url} ` : ""}in the browser, at ${info?.device === "mobile" ? "390" : "1440"}px wide:`,
       where
@@ -287,6 +287,15 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
       Object.assign(p, { status: "sketching", concepts: [null, null, null, null], slots: ["pending", "pending", "pending", "pending"], fast: true });
       const previous = parent ? (prompts.find((x) => x.id === parent)?.concepts || []).map((c, i) => (c ? `${i + 1}. ${c.title}: ${c.summary}` : null)).filter(Boolean).join("\n") : "";
       engine.run(p, { request: body ?? text, previous }).then((ok) => { if (!ok) conceptFallback(p); }, () => conceptFallback(p));
+    } else if (mode === "concepts" && engine?.context && p.info?.url) {
+      // Hand the chat the rendered markup so it can sketch right away instead of reading code first
+      p.preparing = true;
+      engine.context(p.info).then((ctx) => {
+        delete p.preparing;
+        if (p.status !== "queued") return;
+        if (ctx) p.full = p.full.replace(`\n\n${scope.scope}\n\n`, `\n\n${scope.scope}\n\n${ctx}\n\n`);
+        route(p); changed();
+      });
     } else route(p);
     changed();
     const { full: _f, ...pub } = p;

@@ -145,10 +145,34 @@ export function createConceptEngine({ root, shooter, hub, pageUrl, log = () => {
     return ok > 0;
   }
 
+  /** The scoped part as rendered, for a concept request that goes to the chat. Never waits more than a few seconds. */
+  async function context(info) {
+    const url = pageUrl(info);
+    if (!url || !shooter.available()) return null;
+    try {
+      const ctx = await Promise.race([
+        shooter.extract({ url, device: info.device, scope: { section: info.section, selectors: info.selectors } }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 5000)),
+      ]);
+      if (!ctx?.html) return null;
+      const html = ctx.html.length > 9000 ? ctx.html.slice(0, 9000) + "\n<!-- … cut -->" : ctx.html;
+      return [
+        `The scoped part as it renders now${ctx.selector ? ` (selector "${ctx.selector}")` : ""}, so you don't need to look it up:`,
+        "```html", html, "```",
+        `It uses: fonts ${ctx.fonts.join("; ") || "unknown"}; text colors ${ctx.colors.join(", ") || "unknown"}; backgrounds ${ctx.backgrounds.join(", ") || "none"}; font sizes ${ctx.fontSizes.join(", ")}.`,
+        ctx.vars.length ? `CSS variables on :root: ${ctx.vars.join("; ")}` : null,
+        ctx.classes.length ? `Classes that already have CSS on the page: ${ctx.classes.join(" ")}` : null,
+      ].filter(Boolean).join("\n");
+    } catch (e) {
+      log(`concepts: couldn't read the page for the chat (${e.message})`);
+      return null;
+    }
+  }
+
   function cancel(id) {
     for (const proc of running.get(id) || []) try { proc.kill("SIGTERM"); } catch {}
     running.delete(id);
   }
 
-  return { available, run, cancel };
+  return { available, run, cancel, context };
 }

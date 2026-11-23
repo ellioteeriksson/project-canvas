@@ -110,9 +110,9 @@ The canvas has a prompt bar that sends prompts to a Claude Code chat open in the
 
 From the canvas's chat panel, Loupe can start Claude Code sessions in the project: `claude -p` with streaming JSON, `--permission-mode acceptEdits`, and Loupe's MCP server in managed mode. In such a session the plugin's hooks are off, prompts arrive directly as `<canvas-prompt>` messages, and there is no `canvas_wait` or `canvas_stop_listening`. Answer with `canvas_reply`, `canvas_concepts` or `canvas_findings` as usual. Shell commands and other tools that need approval are asked of the user in Loupe through the `canvas_permission` tool, which Claude Code calls itself.
 
-### Concepts made by Loupe
+### Concepts
 
-By default Loupe sketches design concepts itself, four at once with one-off `claude -p` calls, so you won't see the concepts prompt in the chat. You get the follow-up when the user picks one: “Build concept N … in the real code”, with the preview markup and CSS. Build it with the project's own components and tokens. If Loupe can't sketch them (no Chrome, no Claude Code), the concepts prompt comes to you as before.
+Concept requests come to you in the chat. Loupe adds the selected part as it renders now (cleaned markup, fonts, colors, CSS variables and classes), so you can sketch straight from it: be quick, open project files only if you really need them, and don't run builds, tests or screenshots for concepts. Call `canvas_concepts` once and stop. You get a follow-up when the user picks one: “Build concept N … in the real code”, with the preview markup and CSS. Build it with the project's own components and tokens. (If the user switches Settings › Design concepts to “Separately”, Loupe sketches them itself in the background and you only get the follow-up.)
 
 ### Comments
 
