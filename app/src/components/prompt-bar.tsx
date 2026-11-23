@@ -170,8 +170,10 @@ export function PromptBar({ chat, agents, selection, scopeName, insetLeft = 12, 
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); input.current?.focus(); }
     };
+    const focus = () => input.current?.focus();
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("loupe:focus-prompt", focus);
+    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("loupe:focus-prompt", focus); };
   }, []);
   useEffect(() => { if (open) thread.current?.scrollTo({ top: thread.current.scrollHeight }); }, [open, recent.length, latest?.status]);
 

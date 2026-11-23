@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SidebarSimple, TreeStructure, FlowArrow, Swatches, Rows, ClockCounterClockwise, Play, ChatCircleDots, ChatTeardropText } from "@phosphor-icons/react";
+import { SidebarSimple, TreeStructure, FlowArrow, Swatches, Rows, ClockCounterClockwise, Play, ChatCircleDots, ChatTeardropText, Devices, Kanban } from "@phosphor-icons/react";
 import { SidePanel, PANEL_W, type PanelTab } from "@/components/side-panel";
+import { FeedbackBoard } from "@/components/feedback-board";
+import { BreakpointsView } from "@/components/breakpoints-view";
 import type { CanvasComment } from "@/lib/types";
 import { ChangelogView } from "@/components/changelog-view";
 import { Buddy } from "@/components/buddy";
@@ -26,7 +28,7 @@ import { shell } from "@/lib/shell";
 import { BrandMark } from "@/components/brand-mark";
 import { ConceptDrawer } from "@/components/concept-drawer";
 
-type Tab = "canvas" | "sections" | "design" | "changelog";
+type Tab = "canvas" | "sections" | "breakpoints" | "feedback" | "design" | "changelog";
 
 export default function App() {
   const { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots, chat, changelog, managed, comments } = useCanvasData();
@@ -116,7 +118,7 @@ export default function App() {
   const isProduct = manifest.mode === "flow";
   // Room the floating project panel takes on the left of the canvas
   const insetLeft = sidebar ? 288 : 12;
-  const compactTabs = winW - insetLeft - insetRight < 1120;
+  const compactTabs = winW - insetLeft - insetRight < 1340;
   const selectionName = selection?.name ?? manifest.views.find((v) => v.id === selectedId)?.name ?? manifest.designSystem.components.find((c) => c.id === selectedId)?.name;
   const scopeName = selectionName ? (selection?.kind === "section" || selection?.kind === "elements" ? `${selectionName} on ${selection.viewName}` : selectionName) : null;
 
@@ -133,6 +135,15 @@ export default function App() {
                 <SectionsView manifest={manifest} snapshots={snapshots} selectedId={selectedId} onSelect={select} onShowView={openView} />
               ) : tab === "changelog" ? (
                 <ChangelogView manifest={manifest} entries={changelog} />
+              ) : tab === "breakpoints" ? (
+                <BreakpointsView
+                  manifest={manifest}
+                  viewId={selection?.kind === "view" ? selection.id : selection && "viewId" in selection ? (selection as { viewId: string }).viewId : selectedId}
+                  onView={(id) => select(id)}
+                  onAsk={(viewId, el) => { pickElements(viewId, [el]); window.dispatchEvent(new Event("loupe:focus-prompt")); }}
+                />
+              ) : tab === "feedback" ? (
+                <FeedbackBoard manifest={manifest} comments={comments} chat={chat} snapshots={snapshots} target={target} onShow={showComment} />
               ) : (
                 <DesignSystemView manifest={manifest} section={dsSection} selectedId={selectedId} onSelect={select} onOpenView={openView} />
               )}
@@ -219,7 +230,7 @@ export default function App() {
         <div className={cn("island absolute top-3 z-20 p-1", !compactTabs && "-translate-x-1/2")} style={compactTabs ? { left: insetLeft + 12 } : { left: `calc(${insetLeft}px + (100% - ${insetLeft + insetRight}px) / 2)` }}>
           <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
             <TabsList className="bg-transparent [&_[data-state=active]]:bg-segment [&_[data-state=active]]:shadow-none dark:[&_[data-state=active]]:bg-white/12">
-              {([["canvas", "Canvas", ModeIcon], ["sections", "Sections", Rows], ["design", "Design system", Swatches], ["changelog", "Changelog", ClockCounterClockwise]] as const).map(([id, label, Icon]) =>
+              {([["canvas", "Canvas", ModeIcon], ["sections", "Sections", Rows], ["breakpoints", "Breakpoints", Devices], ["feedback", "Feedback", Kanban], ["design", "Design system", Swatches], ["changelog", "Changelog", ClockCounterClockwise]] as const).map(([id, label, Icon]) =>
                 compactTabs ? (
                   <Tooltip key={id}>
                     <TooltipTrigger asChild><TabsTrigger value={id} aria-label={label}><Icon size={15} /></TabsTrigger></TooltipTrigger>

@@ -46,6 +46,13 @@ export type EditEvent = { file: string | null; views: string[]; global: boolean;
 export type PageSection = { name: string; heading: string | null; tag: string; id: string | null; component: string | null; top: number; height: number };
 export type Snapshot = { file: string; at: number; h: number; w: number; sections?: PageSection[]; engine?: "browser" };
 export type SnapshotIndex = Record<string, Snapshot>;
+/** An element picked with Inspect: its box, type and colors as the browser renders them */
+export type InspectedElement = PickedElement & {
+  size: string; viewport: number; color: string; background: string | null; backgroundImage: string | null;
+  typography: { family: string; size: string; weight: string; lineHeight: string; letterSpacing: string; transform: string | null; align: string } | null;
+  padding: string; margin: string; radius: string | null; border: string | null; shadow: string | null; opacity: string | null;
+  layout: { display: string; direction: string | null; gap: string | null; align: string | null; justify: string | null; columns: string | null };
+};
 export type PickedElement = {
   kind: string; tag: string; id: string | null; selector: string; text: string | null; href: string | null;
   component: string | null; section: string | null; top: number; left: number; width: number; height: number; html: string;
@@ -70,7 +77,7 @@ export type TranscriptEvent = { at: number } & (
   | { kind: "done"; error: boolean; text: string; ms?: number }
 );
 export type CanvasComment = {
-  id: string; at: number; status: "open" | "sent" | "resolved"; viewId: string; viewName: string; device: "desktop" | "mobile";
+  id: string; at: number; status: "open" | "sent" | "review" | "resolved"; answeredAt?: number; viewId: string; viewName: string; device: "desktop" | "mobile";
   x: number; y: number; section: { index: number; name: string } | null; text: string; promptId?: string; reply?: string | null; resolvedAt?: number | null;
 };
 export type CanvasPrompt = {

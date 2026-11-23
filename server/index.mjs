@@ -522,7 +522,7 @@ async function handle(req, res) {
     const b = await readBody(req);
     if (p === "/api/comments/send") {
       // One prompt per page, scoped to that page (or the section, for a single comment)
-      const list = (b.ids || []).map((id) => comments.get(id)).filter((c) => c && c.status !== "resolved");
+      const list = (b.ids || []).map((id) => comments.get(id)).filter((c) => c && c.status !== "resolved" && c.status !== "sent");
       if (!list.length) return send(res, 400, { error: "Pick a comment to send" });
       const byView = new Map();
       for (const c of list) byView.set(c.viewId, [...(byView.get(c.viewId) || []), c]);

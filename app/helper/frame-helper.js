@@ -371,6 +371,107 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     }
   }
 
+  /* ---------- inspect: hover shows the box model, click shows the styles (like Dev Mode) ---------- */
+  let inspecting = false, inspHover = null, inspSel = null;
+  const px = (v) => Math.round(parseFloat(v) || 0);
+  function boxModel(el, sel) {
+    const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+    const x = r.left + scrollX, y = r.top + scrollY;
+    const pad = [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].map(px);
+    const mar = [cs.marginTop, cs.marginRight, cs.marginBottom, cs.marginLeft].map(px);
+    const d = (l, t, w, h, css) => { const b = document.createElement("div"); b.style.cssText = `position:absolute;left:${l}px;top:${t}px;width:${Math.max(0, w)}px;height:${Math.max(0, h)}px;pointer-events:none;${css}`; return b; };
+    const out = [];
+    // margin (orange) and padding (green) bands, then the outline and a size tag
+    if (mar.some(Boolean)) out.push(d(x - mar[3], y - mar[0], r.width + mar[1] + mar[3], r.height + mar[0] + mar[2], "background:rgba(255,155,60,.16)"));
+    out.push(d(x, y, r.width, r.height, "background:rgba(80,200,120,.18)"));
+    out.push(d(x + pad[3], y + pad[0], r.width - pad[1] - pad[3], r.height - pad[0] - pad[2], sel ? "background:rgba(13,153,255,.16)" : "background:rgba(13,153,255,.1)"));
+    out.push(d(x, y, r.width, r.height, `outline:${sel ? 2 : 1}px solid #0d99ff`));
+    const tag = document.createElement("div");
+    tag.textContent = `${el.tagName.toLowerCase()} ${Math.round(r.width)} × ${Math.round(r.height)}`;
+    tag.style.cssText = `position:absolute;left:${x}px;top:${r.top < 22 ? y + r.height + 2 : y - 20}px;background:#0d99ff;color:#fff;font:500 11px/1.5 ui-sans-serif,system-ui,sans-serif;padding:0 6px;border-radius:3px;white-space:nowrap;pointer-events:none;`;
+    out.push(tag);
+    return out;
+  }
+  function drawInspect() {
+    const l = layer();
+    l.replaceChildren(...(inspSel?.isConnected ? boxModel(inspSel, true) : []), ...(inspHover && inspHover !== inspSel ? boxModel(inspHover, false) : []));
+  }
+  function stylesOf(el) {
+    const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+    const four = (a) => { const v = a.map(px); return v.every((x) => x === v[0]) ? `${v[0]}` : v.join(" "); };
+    const hasText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+    return {
+      ...describe(el),
+      size: `${Math.round(r.width)} × ${Math.round(r.height)}`,
+      typography: hasText || /^(H[1-6]|P|A|BUTTON|LABEL|LI|SPAN)$/.test(el.tagName) ? {
+        family: cs.fontFamily.split(",")[0].replace(/["']/g, "").trim(), size: cs.fontSize, weight: cs.fontWeight,
+        lineHeight: cs.lineHeight, letterSpacing: cs.letterSpacing, transform: cs.textTransform !== "none" ? cs.textTransform : null, align: cs.textAlign,
+      } : null,
+      color: cs.color, background: cs.backgroundColor !== "rgba(0, 0, 0, 0)" ? cs.backgroundColor : null,
+      backgroundImage: cs.backgroundImage !== "none" ? cs.backgroundImage.slice(0, 160) : null,
+      padding: four([cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft]),
+      margin: four([cs.marginTop, cs.marginRight, cs.marginBottom, cs.marginLeft]),
+      radius: cs.borderRadius !== "0px" ? cs.borderRadius : null,
+      border: px(cs.borderTopWidth) ? `${cs.borderTopWidth} ${cs.borderTopStyle} ${cs.borderTopColor}` : null,
+      layout: { display: cs.display, direction: cs.display.includes("flex") ? cs.flexDirection : null, gap: cs.gap !== "normal" && cs.gap !== "0px" ? cs.gap : null, align: cs.display.includes("flex") || cs.display.includes("grid") ? cs.alignItems : null, justify: cs.display.includes("flex") || cs.display.includes("grid") ? cs.justifyContent : null, columns: cs.display.includes("grid") ? cs.gridTemplateColumns.slice(0, 120) : null },
+      shadow: cs.boxShadow !== "none" ? cs.boxShadow.slice(0, 160) : null, opacity: cs.opacity !== "1" ? cs.opacity : null,
+      viewport: window.innerWidth,
+    };
+  }
+  function onInspMove(e) {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (ignore(el) || el === inspHover) return;
+    inspHover = el;
+    drawInspect();
+  }
+  function onInspClick(e) {
+    if (!inspecting) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    if (e.type !== "click" || ignore(inspHover)) return;
+    inspSel = inspHover;
+    drawInspect();
+    post({ type: "inspected", element: stylesOf(inspSel) });
+  }
+  function onInspKey(e) {
+    if (!inspecting || !inspSel) return;
+    const next = e.key === "ArrowUp" ? inspSel.parentElement : e.key === "ArrowDown" ? inspSel.firstElementChild : null;
+    if (next && !ignore(next)) { e.preventDefault(); inspSel = next; drawInspect(); post({ type: "inspected", element: stylesOf(inspSel) }); }
+  }
+  function setInspecting(on) {
+    if (on === inspecting) return;
+    inspecting = on;
+    if (on) {
+      addEventListener("mousemove", onInspMove, true);
+      BLOCK.forEach((t) => addEventListener(t, onInspClick, true));
+      addEventListener("keydown", onInspKey, true);
+      document.documentElement.style.cursor = "default";
+    } else {
+      removeEventListener("mousemove", onInspMove, true);
+      BLOCK.forEach((t) => removeEventListener(t, onInspClick, true));
+      removeEventListener("keydown", onInspKey, true);
+      document.documentElement.style.cursor = "";
+      inspHover = inspSel = null;
+      document.getElementById("pc-pick-layer")?.remove();
+    }
+  }
+  /** Select the element at a selector (another breakpoint picked it) */
+  function inspectSelector(sel) {
+    const el = q(sel);
+    if (!el) { inspSel = null; drawInspect(); post({ type: "inspected", element: null, missing: sel }); return; }
+    inspSel = el;
+    el.scrollIntoView({ block: "center", behavior: "instant" });
+    drawInspect();
+    post({ type: "inspected", element: stylesOf(el), mirrored: true });
+  }
+
+  /* ---------- breakpoints side by side: scroll together ---------- */
+  let syncing = false, applyingScroll = false;
+  const scrollMax = () => Math.max(1, document.documentElement.scrollHeight - innerHeight);
+  addEventListener("scroll", () => {
+    if (!syncing || applyingScroll) return;
+    post({ type: "scrolled", ratio: scrollY / scrollMax() });
+  }, { passive: true });
+
   let snapping = false;
   async function snapshot(id, maxW) {
     if (snapping) return;
@@ -706,6 +807,10 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     }
     if (d.type === "wireframe") { if (d.on || wire) afterHydration(() => setWire(!!d.on)); }
     if (d.type === "pick") afterHydration(() => setPicking(!!d.on, d.selectors));
+    if (d.type === "inspect") afterHydration(() => setInspecting(!!d.on));
+    if (d.type === "inspect-selector") afterHydration(() => { setInspecting(true); inspectSelector(d.selector); });
+    if (d.type === "scroll-sync") syncing = !!d.on;
+    if (d.type === "scroll-to") { applyingScroll = true; window.scrollTo({ top: d.ratio * scrollMax(), behavior: "instant" }); setTimeout(() => { applyingScroll = false; }, 80); }
     if (d.type === "concept") afterHydration(() => concept(d));
     if (d.type === "audit") afterHydration(() => audit(d));
     // The canvas asks after an agent edit: did the page update itself (hot reload) since then?

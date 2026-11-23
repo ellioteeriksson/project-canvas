@@ -1,6 +1,7 @@
 /**
  * Comments pinned on the canvas: a note on a spot of a page, kept in .canvas/comments.json.
- * They can be sent to Claude as a prompt scoped to that page (and section), and resolved when done.
+ * They can be sent to Claude as a prompt scoped to that page (and section). Status: open → sent (Claude
+ * is on it) → review (Claude answered, you check it) → resolved.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -35,7 +36,7 @@ export function createComments({ root, broadcast }) {
     const c = items.find((x) => x.id === b.id);
     if (!c) return { ok: false, error: "That comment is gone" };
     if (b.text != null) { const t = str(b.text, 4000).trim(); if (t) c.text = t; }
-    if (["open", "resolved"].includes(b.status)) { c.status = b.status; c.resolvedAt = b.status === "resolved" ? Date.now() : null; }
+    if (["open", "review", "resolved"].includes(b.status)) { c.status = b.status; c.resolvedAt = b.status === "resolved" ? Date.now() : null; }
     if (b.x != null) c.x = num(b.x);
     if (b.y != null) c.y = num(b.y);
     save();
@@ -53,7 +54,8 @@ export function createComments({ root, broadcast }) {
   }
   function promptDone(promptId, reply) {
     let n = 0;
-    for (const c of items) if (c.promptId === promptId && c.status === "sent") { Object.assign(c, { status: "resolved", resolvedAt: Date.now(), reply: reply ? str(reply, 1200) : null }); n++; }
+    // Claude answered: the comment waits for you to check it (the board's "To review")
+    for (const c of items) if (c.promptId === promptId && c.status === "sent") { Object.assign(c, { status: "review", answeredAt: Date.now(), reply: reply ? str(reply, 1200) : null }); n++; }
     if (n) save();
   }
   function promptFailed(promptId) {

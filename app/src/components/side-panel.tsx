@@ -315,9 +315,9 @@ function CommentsTab({ comments, manifest, chat, target, activeComment, onShowCo
                     ) : <span className="w-[13px]" />}
                     <button type="button" onClick={() => onShowComment(c)} className="min-w-0 flex-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <span className={cn("grid size-[18px] place-items-center rounded-full rounded-bl-[3px] text-[10px] font-semibold text-white", c.status === "resolved" ? "bg-muted-foreground/60" : c.status === "sent" ? "bg-[var(--agent)]" : "bg-scope")}>{numberOf.get(c.id)}</span>
+                        <span className={cn("grid size-[18px] place-items-center rounded-full rounded-bl-[3px] text-[10px] font-semibold text-white", c.status === "resolved" ? "bg-muted-foreground/60" : c.status === "sent" ? "bg-[var(--agent)]" : c.status === "review" ? "bg-[#b7791f]" : "bg-scope")}>{numberOf.get(c.id)}</span>
                         {c.section?.name ? <span className="truncate">{c.section.name}</span> : null}
-                        <span className="ml-auto shrink-0">{c.status === "sent" ? "With Claude" : c.status === "resolved" ? "Resolved" : new Date(c.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
+                        <span className="ml-auto shrink-0">{c.status === "sent" ? "With Claude" : c.status === "review" ? "To review" : c.status === "resolved" ? "Done" : new Date(c.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
                       </span>
                       <span className={cn("mt-1 block text-[13px] leading-snug whitespace-pre-wrap", c.status === "resolved" && "text-muted-foreground line-through decoration-muted-foreground/40")}>{c.text}</span>
                       {c.reply && <span className="mt-1 flex gap-1 text-xs text-muted-foreground"><Check size={12} className="mt-0.5 shrink-0 text-[var(--live)]" /> <span className="line-clamp-3">{c.reply}</span></span>}
@@ -329,10 +329,10 @@ function CommentsTab({ comments, manifest, chat, target, activeComment, onShowCo
                         </TooltipTrigger><TooltipContent side="left">Send to Claude</TooltipContent></Tooltip>
                       )}
                       <Tooltip><TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" onClick={() => api.comments.update({ id: c.id, status: c.status === "resolved" ? "open" : "resolved" })} aria-label={c.status === "resolved" ? "Reopen" : "Resolve"}>
+                        <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" onClick={() => api.comments.update({ id: c.id, status: c.status === "resolved" ? "open" : "resolved" })} aria-label={c.status === "resolved" ? "Reopen" : "Mark done"}>
                           {c.status === "resolved" ? <ArrowCounterClockwise size={14} /> : <CheckCircle size={14} />}
                         </Button>
-                      </TooltipTrigger><TooltipContent side="left">{c.status === "resolved" ? "Reopen" : "Resolve"}</TooltipContent></Tooltip>
+                      </TooltipTrigger><TooltipContent side="left">{c.status === "resolved" ? "Reopen" : "Mark done"}</TooltipContent></Tooltip>
                       <Tooltip><TooltipTrigger asChild>
                         <Button variant="ghost" size="icon" className="size-7 text-muted-foreground" onClick={() => api.comments.remove(c.id)} aria-label="Delete comment"><Trash size={14} /></Button>
                       </TooltipTrigger><TooltipContent side="left">Delete</TooltipContent></Tooltip>

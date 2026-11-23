@@ -45,7 +45,7 @@ export function CommentLayer({ viewId, viewName, pageH, scale, sections, interac
           <span
             className={cn(
               "grid h-[26px] min-w-[26px] place-items-center rounded-full rounded-bl-[4px] px-1.5 text-[12px] font-semibold text-white shadow-[0_2px_8px_rgba(0,0,0,.25)] ring-2 ring-white transition-transform hover:scale-110",
-              p.status === "sent" ? "bg-[var(--agent)]" : "bg-scope",
+              p.status === "sent" ? "bg-[var(--agent)]" : p.status === "review" ? "bg-[#b7791f]" : "bg-scope",
               c.activeComment === p.id && "scale-125",
             )}
           >

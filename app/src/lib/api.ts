@@ -43,7 +43,7 @@ export const api = {
   /* comments pinned on the canvas */
   comments: {
     add: (c: Omit<CanvasComment, "id" | "at" | "status"> & { selection?: unknown }) => post<{ ok: boolean; error?: string; comment?: CanvasComment }>("/api/comments/add", c),
-    update: (b: { id: string; text?: string; status?: "open" | "resolved"; x?: number; y?: number }) => post("/api/comments/update", b),
+    update: (b: { id: string; text?: string; status?: "open" | "review" | "resolved"; x?: number; y?: number }) => post("/api/comments/update", b),
     remove: (id: string) => post("/api/comments/delete", { id }),
     send: (ids: string[], conn?: string | null) => post<{ ok: boolean; error?: string; prompts?: CanvasPrompt[] }>("/api/comments/send", { ids, conn }),
   },
