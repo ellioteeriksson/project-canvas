@@ -280,8 +280,9 @@ const claudes = createAgents({
   log: (m) => console.log(`[loupe] claude: ${m}`),
 });
 /** Files behind the selected page, so a prompt about it goes to the session that knows it */
-function selectionFiles() {
-  const sel = readState().selection;
+const maxClaudes = () => { const n = Number(loadConfig(ROOT).maxClaudes); return Number.isFinite(n) && n >= 1 ? Math.min(8, Math.round(n)) : 3; };
+function selectionFiles(given) {
+  const sel = given && typeof given === "object" ? given : readState().selection;
   const id = sel?.kind === "view" ? sel.id : sel?.viewId;
   const v = manifest?.views.find((x) => x.id === id);
   return v ? [v.file, ...(v.files || [])].filter(Boolean) : [];
@@ -455,7 +456,7 @@ async function handle(req, res) {
   if (req.method === "POST" && p === "/api/prompt") {
     const b = await readBody(req);
     // "auto": Loupe picks among its own sessions (the one that worked on this page, else a free one)
-    if (b.conn === "auto") b.conn = claudes.pick(selectionFiles());
+    if (b.conn === "auto") b.conn = claudes.dispatch(selectionFiles(b.selection && typeof b.selection === "object" && b.selection.id ? { ...b.selection, viewId: b.selection.viewId ?? String(b.selection.id).split("::")[0] } : null), maxClaudes());
     delete b.extra;
     const r = hub.submit(b);
     return send(res, r.ok ? 200 : 400, r);
@@ -536,7 +537,7 @@ async function handle(req, res) {
         let sel = null;
         try { sel = one?.section ? selectionRecord({ kind: "section", id: `${one.viewId}::${one.section.index}`, device: one.device }) : selectionRecord({ kind: "view", id: group[0].viewId }); } catch {}
         let conn = b.conn;
-        if (!conn || conn === "auto") { const v = manifest?.views.find((x) => x.id === group[0].viewId); conn = claudes.pick(v ? [v.file, ...(v.files || [])].filter(Boolean) : []); }
+        if (!conn || conn === "auto") { const v = manifest?.views.find((x) => x.id === group[0].viewId); conn = claudes.dispatch(v ? [v.file, ...(v.files || [])].filter(Boolean) : [], maxClaudes()); }
         const r = hub.submit({ text, conn, selection: sel, extra: { body } });
         if (!r.ok) return send(res, 400, r);
         comments.sent(group.map((c) => c.id), r.prompt.id);

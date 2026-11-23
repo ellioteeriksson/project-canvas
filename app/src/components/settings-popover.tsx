@@ -64,6 +64,22 @@ export function SettingsPopover({ manifest }: { manifest: Manifest }) {
           <p className="text-xs text-muted-foreground">For new sessions Loupe starts. Start a new one in the chat panel to switch.</p>
         </div>
         <div className="flex flex-col gap-1.5">
+          <label htmlFor="mc" className="text-[13px] font-medium">Claudes at once</label>
+          <select
+            id="mc"
+            value={String(manifest.maxClaudes ?? 3)}
+            onChange={(e) => api.config({ maxClaudes: Number(e.target.value) })}
+            className="h-8 rounded-md border border-input bg-background px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="1">1: one job at a time</option>
+            <option value="2">2</option>
+            <option value="3">3 (recommended)</option>
+            <option value="4">4</option>
+            <option value="6">6</option>
+          </select>
+          <p className="text-xs text-muted-foreground">When every Claude is busy, Loupe starts another, up to this many, so jobs on different pages run side by side. Extra ones stop after 10 idle minutes.</p>
+        </div>
+        <div className="flex flex-col gap-1.5">
           <label htmlFor="cm" className="text-[13px] font-medium">Design concepts</label>
           <select
             id="cm"

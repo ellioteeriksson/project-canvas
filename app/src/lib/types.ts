@@ -16,6 +16,8 @@ export type Manifest = {
   concepts?: { fast: boolean; model: string };
   /** Model for the Claude Code sessions Loupe runs */
   sessionModel?: string;
+  /** How many Claudes Loupe runs at once for parallel jobs */
+  maxClaudes?: number;
   devUrl: string; frameUrl?: string; viewport: "desktop" | "mobile"; previewRoute: string | null;
   frameHeight: "viewport" | "full"; frameConcurrency: number; frameLayer: "live" | "wireframe";
   changedAt: Record<string, number>; globalFiles: string[];
@@ -63,6 +65,8 @@ export type ChatConn = { id: string; status: ChatStatus; live: boolean; listen?:
 export type ManagedSession = {
   id: string; label: string; state: "starting" | "idle" | "working" | "waiting"; claudeSession: string | null; startedAt: number;
   error: string | null; prompt: string | null; views: string[]; cost: number; queue: number;
+  /** Started by Loupe for parallel work; stops by itself after a while with nothing to do */
+  auto?: boolean;
 };
 export type TranscriptEvent = { at: number } & (
   | { kind: "started"; resumed: boolean }

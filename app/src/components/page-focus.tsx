@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { LiveSteps } from "@/components/live-steps";
-import { Composer, PermissionCard, PromptState, liveConns, resolveTarget } from "@/components/prompt-bar";
+import { Composer, PermissionStack, PromptState, liveConns, resolveTarget } from "@/components/prompt-bar";
 
 const host = (w: Window | null | undefined, msg: Record<string, unknown>) => { try { w?.postMessage({ source: "project-canvas-host", ...msg }, "*"); } catch {} };
 const WIDTH = { desktop: 1440, mobile: 390 } as const;
@@ -183,7 +183,7 @@ export function PageFocus(p: Props) {
           {/* Claude asking for permission shows up here too, since the prompt bar is hidden */}
           {p.chat.permissions.length > 0 && (
             <div className="absolute right-24 bottom-4 z-30 flex w-[min(520px,80%)] flex-col gap-2">
-              {p.chat.permissions.map((x) => <PermissionCard key={x.request_id} p={x} />)}
+              <PermissionStack perms={p.chat.permissions} conns={p.chat.conns} />
             </div>
           )}
           {scoped ? (

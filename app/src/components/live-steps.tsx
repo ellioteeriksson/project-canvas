@@ -30,7 +30,7 @@ export function StepIcon({ kind, className }: { kind: PromptStep["kind"]; classN
 }
 
 /** What Claude is doing for a prompt, live: its words, its current action, its plan and the steps so far */
-export function LiveSteps({ p, className, startOpen = false }: { p: CanvasPrompt; className?: string; startOpen?: boolean }) {
+export function LiveSteps({ p, className, startOpen = false, who }: { p: CanvasPrompt; className?: string; startOpen?: boolean; who?: string }) {
   const [open, setOpen] = useState(startOpen);
   const steps = p.steps ?? [];
   const elapsed = useElapsed(p.deliveredAt ?? p.at);
@@ -44,7 +44,7 @@ export function LiveSteps({ p, className, startOpen = false }: { p: CanvasPrompt
         <span className="agent-dot size-1.5 shrink-0 rounded-full bg-[var(--agent)]" />
         <span className="min-w-0 truncate text-muted-foreground">{doing ? stepLabel(doing) : steps.length ? "Working" : "Starting"}</span>
         {p.plan && p.plan.total > 1 && <span className="shrink-0 text-muted-foreground">· step {Math.min(p.plan.done + 1, p.plan.total)} of {p.plan.total}</span>}
-        <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{elapsed}</span>
+        <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{who ? `${who} · ` : ""}{elapsed}</span>
       </div>
       {steps.length > 1 && (
         <>

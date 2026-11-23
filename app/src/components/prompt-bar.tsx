@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, ArrowsOutSimple, CaretDown, Check, ChatsCircle, CircleNotch, Crosshair, Play, Plus, ShieldWarning, Shuffle, Sparkle, SquaresFour, Stop, Warning, X } from "@phosphor-icons/react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
-import type { Agent, CanvasPrompt, ChatConn, ChatState, ChatStatus, Selection } from "@/lib/types";
+import type { Agent, CanvasPrompt, ChatConn, ChatState, ChatStatus, PermissionRequest, Selection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { LiveSteps, StepIcon, currentStep, stepLabel, useElapsed } from "@/components/live-steps";
@@ -36,12 +36,17 @@ export const chatName = (c: ChatConn) => (c.managed ? c.name || "Claude" : c.lab
 export const AUTO = "auto";
 
 /** Which chat a prompt goes to: the one picked, or "auto" (Loupe picks among its own sessions) */
+/** Whether Loupe can start Claude Code sessions itself (set once by the app) */
+let startable = false;
+export const setStartable = (v: boolean) => { startable = v; };
+
 export function resolveTarget(conns: ChatConn[], target: string | null) {
   const managed = conns.filter((c) => c.managed);
   const picked = target && target !== AUTO ? conns.find((c) => c.id === target) ?? null : null;
   if (picked) return { id: picked.id, conn: picked, auto: false };
-  // Loupe's own sessions come first; a terminal chat only when you pick it (or it's the only one)
-  if (managed.length > 1) return { id: AUTO, conn: null, auto: true };
+  // Loupe's own sessions come first, and Loupe spreads jobs across several of them (starting more as
+  // needed); a terminal chat only when you pick it, or when it's the only chat and Loupe can't start one
+  if (managed.length || (startable && !conns.length)) return { id: AUTO, conn: null, auto: true };
   const first = managed[0] ?? conns[0] ?? null;
   return { id: first?.id ?? null, conn: first, auto: false };
 }
@@ -185,7 +190,7 @@ export function PromptBar({ chat, agents, selection, scopeName, insetLeft = 12, 
   return (
     <div className="pointer-events-none absolute bottom-5 z-20 flex justify-center px-4" style={{ left: insetLeft, right: insetRight }}>
       <div className="pointer-events-auto flex w-[640px] max-w-full flex-col items-center gap-2.5">
-        {perms.map((p) => <PermissionCard key={p.request_id} p={p} />)}
+        <PermissionStack perms={perms} conns={chat.conns} />
 
         {open && (
           <div ref={thread} className="island max-h-[min(46vh,440px)] w-full overflow-y-auto" aria-label="Prompts sent from the canvas">
@@ -272,7 +277,8 @@ export function ChatPicker({ conns, to, onPick, canStart, align = "start" }: { c
     ) : <span className="inline-flex h-7 items-center gap-1.5 px-2 text-xs text-muted-foreground"><StatusDot status="offline" />No chat open</span>;
   const managed = conns.filter((c) => c.managed);
   const status: ChatStatus = to.auto ? (managed.some((c) => c.status === "live") ? "live" : "busy") : to.conn?.status ?? "offline";
-  const label = to.auto ? `Auto · ${managed.length} Claudes` : to.conn ? (to.conn.managed ? chatName(to.conn) : STATUS[to.conn.status].word) : "";
+  const working = managed.filter((c) => c.status === "busy").length;
+  const label = to.auto ? (managed.length > 1 ? `Auto · ${working ? `${working} of ${managed.length} working` : `${managed.length} Claudes`}` : "Auto") : to.conn ? (to.conn.managed ? chatName(to.conn) : STATUS[to.conn.status].word) : "";
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -283,14 +289,14 @@ export function ChatPicker({ conns, to, onPick, canStart, align = "start" }: { c
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align={align} className="w-80">
-        <DropdownMenuLabel className="font-normal text-muted-foreground">{to.auto ? "Each prompt goes to the Claude that worked on that page, or to a free one." : to.conn ? STATUS[to.conn.status].hint : ""}</DropdownMenuLabel>
+        <DropdownMenuLabel className="font-normal text-muted-foreground">{to.auto ? "Jobs run at the same time: each goes to a free Claude, and Loupe starts another when all are busy. A page stays with the Claude working on it, so two never edit it at once." : to.conn ? STATUS[to.conn.status].hint : ""}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {managed.length > 1 && (
+        {(managed.length > 0 || canStart) && (
           <DropdownMenuItem onSelect={() => onPick(AUTO)} className="flex items-start gap-2">
             <Shuffle size={13} className="mt-1 text-muted-foreground" />
             <span className="min-w-0 flex-1">
-              <span className="block">Auto</span>
-              <span className="block text-xs text-muted-foreground">Loupe picks among {managed.length} Claudes</span>
+              <span className="block">Auto, in parallel</span>
+              <span className="block text-xs text-muted-foreground">Loupe runs jobs side by side on several Claudes</span>
             </span>
             {to.auto && <Check size={14} className="mt-1" />}
           </DropdownMenuItem>
@@ -391,7 +397,7 @@ export function PromptState({ p, conns, agents, compact, onConcepts }: { p: Canv
           <span className="truncate">The chat closed without answering</span>
         </div>
       );
-    if (!compact && p.steps?.length) return <LiveSteps p={p} />;
+    if (!compact && p.steps?.length) return <LiveSteps p={p} who={conns.filter((c) => c.managed).length > 1 && conn ? chatName(conn) : undefined} />;
     const step = currentStep(p);
     const what = step ? stepLabel(step)
       : p.mode === "concepts" ? "Claude is sketching concepts"
@@ -409,7 +415,7 @@ export function PromptState({ p, conns, agents, compact, onConcepts }: { p: Canv
     <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
       {lead}
       <StatusDot status={conn?.status ?? "offline"} />
-      <span className="truncate">{conn?.status === "busy" ? "Next up, once Claude finishes what it's on" : p.status === "sending" ? "Sending…" : "Waiting for the chat"}</span>
+      <span className="truncate">{conn?.status === "busy" ? `Next up, once ${conn.managed ? chatName(conn) : "Claude"} finishes what it's on` : p.status === "sending" ? "Sending…" : "Waiting for the chat"}</span>
       {p.status === "queued" && !compact && (
         <Button variant="ghost" size="sm" className="ml-auto h-6 px-1.5 text-xs" onClick={() => api.cancelPrompt(p.id)}>
           <X size={12} /> Cancel
@@ -424,7 +430,26 @@ function Elapsed({ since }: { since: number }) {
   return <span className="shrink-0 tabular-nums text-muted-foreground">{t}</span>;
 }
 
-export function PermissionCard({ p }: { p: { request_id: string; tool_name: string; description: string; input_preview: string } }) {
+/** Permission requests, one at a time: with several Claudes at work they'd otherwise pile up off screen */
+export function PermissionStack({ perms, conns, className }: { perms: PermissionRequest[]; conns: ChatConn[]; className?: string }) {
+  const [all, setAll] = useState(false);
+  if (!perms.length) return null;
+  const several = conns.filter((c) => c.managed).length > 1;
+  const name = (r: PermissionRequest) => { const c = conns.find((x) => x.id === r.conn); return several && c ? chatName(c) : undefined; };
+  const shown = all ? perms : perms.slice(0, 1);
+  return (
+    <div className={cn("flex w-full flex-col gap-2", all && "max-h-[46vh] overflow-y-auto", className)}>
+      {shown.map((r) => <PermissionCard key={r.request_id} p={r} who={name(r)} />)}
+      {perms.length > 1 && (
+        <button type="button" onClick={() => setAll((a) => !a)} className="island self-center rounded-full px-3 py-1 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+          {all ? "Show one at a time" : `${perms.length - 1} more waiting for you`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function PermissionCard({ p, who }: { p: { request_id: string; tool_name: string; description: string; input_preview: string }; who?: string }) {
   const [busy, setBusy] = useState(false);
   const decide = async (b: "allow" | "deny") => { setBusy(true); await api.permission(p.request_id, b); };
   return (
@@ -432,7 +457,7 @@ export function PermissionCard({ p }: { p: { request_id: string; tool_name: stri
       <div className="flex items-start gap-2">
         <ShieldWarning size={16} className="mt-0.5 shrink-0 text-[var(--agent)]" />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium">Claude wants to use {p.tool_name}</p>
+          <p className="text-[13px] font-medium">{who ?? "Claude"} wants to use {p.tool_name}</p>
           {p.description && <p className="text-xs text-muted-foreground">{p.description}</p>}
           {p.input_preview && <pre className="mt-2 max-h-28 overflow-auto rounded-md bg-muted px-2 py-1.5 font-mono text-[11px] leading-4 whitespace-pre-wrap">{p.input_preview}</pre>}
         </div>

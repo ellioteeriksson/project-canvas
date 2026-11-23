@@ -24,7 +24,7 @@ import { ShipButton } from "@/components/ship-button";
 import { SettingsPopover } from "@/components/settings-popover";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AgentIndicator } from "@/components/agent-indicator";
-import { PromptBar } from "@/components/prompt-bar";
+import { PromptBar, setStartable } from "@/components/prompt-bar";
 import { shell } from "@/lib/shell";
 import { BrandMark } from "@/components/brand-mark";
 import { ConceptDrawer } from "@/components/concept-drawer";
@@ -46,7 +46,7 @@ export default function App() {
   useEffect(() => { const on = () => setWinW(window.innerWidth); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, []);
   useEffect(() => {
     // In the Loupe app, opening a project starts a Claude session for it (unless a chat is already connected)
-    api.managed.info().then((d) => setCanStart(!!d.available)).catch(() => {});
+    api.managed.info().then((d) => { setStartable(!!d.available); setCanStart(!!d.available); }).catch(() => {});
     if (shell) api.managed.ensure().catch(() => {});
   }, []);
   useEffect(() => {

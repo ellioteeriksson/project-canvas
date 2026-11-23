@@ -190,6 +190,7 @@ export function scanProject(root, config = loadConfig(root)) {
     mode: config.mode && config.mode !== "auto" ? config.mode : detectMode(root, views),
     modeSource: config.mode && config.mode !== "auto" ? "config" : "auto",
     frameworkSetting: config.framework && config.framework !== "auto" ? config.framework : "auto",
+    maxClaudes: Number(config.maxClaudes) >= 1 ? Math.min(8, Math.round(Number(config.maxClaudes))) : 3,
     concepts: { fast: config.fastConcepts === true, model: config.conceptModel || "sonnet" },
     sessionModel: config.sessionModel || "sonnet",
     devUrl: config.devUrl || defaultDevUrl(root, framework) || "/__site",

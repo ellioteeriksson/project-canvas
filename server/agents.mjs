@@ -31,6 +31,7 @@ const SYSTEM = [
   "You are running inside Loupe, a visual canvas of this project's pages. The user talks to you from Loupe and reads your messages there, not in a terminal.",
   "Keep messages short and plain. When a message is a <canvas-prompt>, follow its scope and instructions, and answer with the canvas tools it names.",
   "File edits in the project run without asking. Shell commands and anything outside the project ask the user in Loupe first, so explain briefly why you need one.",
+  "Other Claudes may work in this project at the same time, on other pages. Keep to the files your prompt is about. If you must touch shared files (global CSS, shared components, config), make small additive edits and read the file again right before editing it. Don't run formatters or codemods across the whole project.",
 ].join(" ");
 
 const summarize = (name, input = {}) => {
@@ -60,7 +61,7 @@ export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, 
   };
   const pub = (s) => ({
     id: s.id, label: s.label, state: s.state, claudeSession: s.claudeSession, startedAt: s.startedAt, error: s.error || null,
-    prompt: s.current ? s.current.text : null, views: [...s.views], cost: s.cost, queue: s.queue.length,
+    prompt: s.current ? s.current.text : null, views: [...s.views], cost: s.cost, queue: s.queue.length, auto: !!s.auto,
   });
   const list = () => [...sessions.values()].map(pub);
   const push = () => broadcast("agents", list());
@@ -180,17 +181,21 @@ export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, 
       if (s.claudeSession) recordActivity({ session: s.claudeSession, phase: "done", managed: s.id });
       s.current = null;
       setState(s, "idle");
+      if (!s.queue.length) { s.claim.clear(); s.idleSince = Date.now(); }
       pump(s);
     }
   }
 
-  function start({ label, resume } = {}) {
+  function start({ label, resume, auto = false } = {}) {
     if (!exe) return { ok: false, error: "Claude Code isn't installed, or Loupe can't find it. Install it from claude.com/code, then try again." };
     const id = `loupe-${crypto.randomBytes(3).toString("hex")}`;
-    const n = sessions.size + 1;
+    const taken = new Set([...sessions.values()].map((x) => x.label));
+    let n = 1;
+    while (taken.has(n === 1 ? "Claude" : `Claude ${n}`)) n++;
     const s = {
       id, label: label || (n === 1 ? "Claude" : `Claude ${n}`), state: "starting", startedAt: Date.now(), claudeSession: resume || null,
       queue: [], current: null, transcript: [], views: new Set(), edits: new Map(), cost: 0, proc: null, error: null,
+      auto, claim: new Set(), idleSince: Date.now(),
     };
     const mcpEnv = { LOUPE_MANAGED_URL: serverUrl(), LOUPE_CONN: id, CLAUDE_PROJECT_DIR: root, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {}) };
     const args = [
@@ -312,11 +317,42 @@ export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, 
     return (free[0] || all.sort((a, b) => a.queue.length - b.queue.length)[0]).id;
   }
 
+  /**
+   * Where a new job goes when Loupe picks: the Claude already on those files (so two never edit the
+   * same page at once), else a free one, else a new Claude while under the limit, else the shortest queue.
+   */
+  function dispatch(files = [], max = 3) {
+    const alive = [...sessions.values()].filter((s) => !s.stopping && !s.error && s.proc && s.proc.exitCode === null);
+    const busy = (s) => s.state !== "idle" || s.queue.length > 0;
+    const claim = (s) => { files.forEach((f) => s.claim.add(f)); return s.id; };
+    const onIt = alive.find((s) => busy(s) && files.some((f) => s.claim.has(f)));
+    if (onIt) return claim(onIt);
+    const free = alive.filter((s) => !busy(s));
+    const knows = free.find((s) => files.some((f) => s.views.has(f)));
+    if (knows || free[0]) return claim(knows || free[0]);
+    if (alive.length < Math.max(1, max)) {
+      const r = start({ auto: alive.length > 0 });
+      if (r.ok) return claim(sessions.get(r.session.id));
+    }
+    if (!alive.length) return null;
+    return claim(alive.sort((a, b) => a.queue.length - b.queue.length)[0]);
+  }
+
+  // Extra Claudes Loupe started for parallel work stop after a while with nothing to do
+  const IDLE_STOP = 10 * 60_000;
+  setInterval(() => {
+    for (const s of sessions.values())
+      if (s.auto && s.state === "idle" && !s.queue.length && Date.now() - s.idleSince > IDLE_STOP && sessions.size > 1) {
+        log(`claude: stopping ${s.label}, idle for 10 minutes`);
+        stop(s.id);
+      }
+  }, 60_000).unref?.();
+
   function stopAll() { for (const id of sessions.keys()) stop(id); }
   process.on("exit", () => { for (const s of sessions.values()) try { s.proc.kill("SIGTERM"); } catch {} });
 
   return {
-    available: () => !!exe, binary: exe, list, start, say, interrupt, stop, stopAll, permission, transcript, pick,
+    available: () => !!exe, binary: exe, list, start, say, interrupt, stop, stopAll, permission, transcript, pick, dispatch,
     previous: () => saved.filter((x) => x.claudeSession && !sessions.has(x.id)),
     has: (id) => sessions.has(id),
   };
