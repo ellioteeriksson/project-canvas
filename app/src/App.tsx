@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SidebarSimple, TreeStructure, FlowArrow, Swatches, Rows, ClockCounterClockwise, Play, ChatCircleDots, ChatTeardropText, Devices, Kanban } from "@phosphor-icons/react";
+import { SidebarSimple, TreeStructure, FlowArrow, Swatches, Rows, ClockCounterClockwise, Play, ChatCircleDots, ChatTeardropText, Devices, Kanban, Columns, X } from "@phosphor-icons/react";
 import { SidePanel, PANEL_W, type PanelTab } from "@/components/side-panel";
 import { FeedbackBoard } from "@/components/feedback-board";
 import { BreakpointsView } from "@/components/breakpoints-view";
-import { PageFocus } from "@/components/page-focus";
-import type { CanvasComment, PageSection } from "@/lib/types";
+import { CompareView } from "@/components/compare-view";
+import { PageFocus, type BasketItem } from "@/components/page-focus";
+import type { CanvasComment, ChangelogEntry, PageSection } from "@/lib/types";
 import { ChangelogView } from "@/components/changelog-view";
 import { Buddy } from "@/components/buddy";
 import { ShortcutsDialog } from "@/components/shortcuts-dialog";
+import { UpdateBanner } from "@/components/update-banner";
+import { useJobAlerts } from "@/lib/notify";
+import { CheckResult } from "@/components/change-review";
 import { usePref } from "@/lib/prefs";
 import type { Finding } from "@/lib/audit";
 import { useCanvasData, api } from "@/lib/api";
@@ -29,7 +33,7 @@ import { shell } from "@/lib/shell";
 import { BrandMark } from "@/components/brand-mark";
 import { ConceptDrawer } from "@/components/concept-drawer";
 
-type Tab = "canvas" | "sections" | "breakpoints" | "feedback" | "design" | "changelog";
+type Tab = "canvas" | "sections" | "breakpoints" | "compare" | "feedback" | "design" | "changelog";
 
 export default function App() {
   const { manifest, state, git, connected, refreshGit, setState, frames, agents, edits, snapshots, chat, changelog, managed, comments } = useCanvasData();
@@ -74,6 +78,19 @@ export default function App() {
   const selectedId = selection?.id ?? null;
 
   useEffect(() => { if (manifest) document.title = `${manifest.project.name} · Loupe`; }, [manifest?.project.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  useJobAlerts(chat, manifest ? `${manifest.project.name} · Loupe` : "Loupe");
+  // Lou speaks up when the check after a change finds something that wasn't broken before
+  const [louNote, setLouNote] = useState<ChangelogEntry | null>(null);
+  const seenChecks = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const first = seenChecks.current === null;
+    seenChecks.current ??= new Set();
+    for (const e of changelog) {
+      if (!e.check || seenChecks.current.has(e.id)) continue;
+      seenChecks.current.add(e.id);
+      if (!first && e.check.issues.some((i) => i.new === true)) setLouNote(e);
+    }
+  }, [changelog]);
 
   const select = useCallback(
     (id: string | null, extra?: Record<string, unknown>) => {
@@ -102,7 +119,22 @@ export default function App() {
     if (selection?.kind === "view" ? selection.id !== id : !(selection && "viewId" in selection && (selection as { viewId: string }).viewId === id)) select(id);
     setFocusId(id);
   };
-  const focusSection = (viewId: string, index: number | null, section?: PageSection, list?: PageSection[]) => {
+  // Sections collected with ⇧-click (on one page or several) for one prompt
+  const [basket, setBasket] = useState<BasketItem[]>([]);
+  const focusSection = (viewId: string, index: number | null, section?: PageSection, list?: PageSection[], add?: boolean) => {
+    if (add && index !== null) {
+      const view = manifest?.views.find((v) => v.id === viewId);
+      const item: BasketItem = { id: `${viewId}::${index}`, viewId, viewName: view?.name ?? viewId, index, name: section?.name ?? `Section ${index + 1}`, device: focusDevice, live: section ?? null, liveList: list ?? null };
+      setBasket((b) => {
+        // Start the collection with the section you'd already picked
+        const cur = selection?.kind === "section" && !b.length && selection.id !== item.id ? (() => {
+          const [vid, i] = String(selection.id).split("::");
+          return [{ id: selection.id, viewId: vid, viewName: manifest?.views.find((v) => v.id === vid)?.name ?? vid, index: Number(i), name: selection.name, device: focusDevice, live: null, liveList: null } as BasketItem];
+        })() : [];
+        const all = [...cur, ...b];
+        return all.some((x) => x.id === item.id) ? all.filter((x) => x.id !== item.id) : [...all, item];
+      });
+    } else setBasket([]);
     if (index === null) return select(viewId);
     const id = `${viewId}::${index}`;
     const view = manifest?.views.find((v) => v.id === viewId);
@@ -155,6 +187,12 @@ export default function App() {
                 <SectionsView manifest={manifest} snapshots={snapshots} selectedId={selectedId} onSelect={select} onShowView={openView} />
               ) : tab === "changelog" ? (
                 <ChangelogView manifest={manifest} entries={changelog} />
+              ) : tab === "compare" ? (
+                <CompareView
+                  manifest={manifest} changelog={changelog}
+                  viewId={selection ? (selection.kind === "view" ? selection.id : "viewId" in selection ? (selection as { viewId: string }).viewId : null) : null}
+                  onView={(id) => select(id)}
+                />
               ) : tab === "breakpoints" ? (
                 <BreakpointsView
                   manifest={manifest}
@@ -173,8 +211,10 @@ export default function App() {
             <PageFocus
               manifest={manifest} viewId={focusId} device={focusDevice} chat={chat} agents={agents} edits={edits}
               selection={selection} scopeName={scopeName} target={target} insetLeft={insetLeft} insetRight={insetRight}
-              onView={(id) => { setFocusId(id); select(id); }} onDevice={setFocusDevice} onClose={() => setFocusId(null)}
+              onView={(id) => { setFocusId(id); select(id); }} onDevice={setFocusDevice} onClose={() => { setFocusId(null); setBasket([]); }}
               onSection={focusSection} onElements={pickElements} onConcepts={setConceptId}
+              basket={basket} onClearBasket={() => setBasket([])} changelog={changelog}
+              onCompare={(id) => { select(id); setTab("compare"); }}
             />
           )}
           {panel !== "claude" && !(focusId && tab === "canvas") && <PromptBar
@@ -258,7 +298,7 @@ export default function App() {
         <div className={cn("island absolute top-3 z-20 p-1", !compactTabs && "-translate-x-1/2")} style={compactTabs ? { left: insetLeft + 12 } : { left: `calc(${insetLeft}px + (100% - ${insetLeft + insetRight}px) / 2)` }}>
           <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
             <TabsList className="bg-transparent [&_[data-state=active]]:bg-segment [&_[data-state=active]]:shadow-none dark:[&_[data-state=active]]:bg-white/12">
-              {([["canvas", "Canvas", ModeIcon], ["sections", "Sections", Rows], ["breakpoints", "Breakpoints", Devices], ["feedback", "Feedback", Kanban], ["design", "Design system", Swatches], ["changelog", "Changelog", ClockCounterClockwise]] as const).map(([id, label, Icon]) =>
+              {([["canvas", "Canvas", ModeIcon], ["sections", "Sections", Rows], ["breakpoints", "Breakpoints", Devices], ["compare", "Compare", Columns], ["feedback", "Feedback", Kanban], ["design", "Design system", Swatches], ["changelog", "Changelog", ClockCounterClockwise]] as const).map(([id, label, Icon]) =>
                 compactTabs ? (
                   <Tooltip key={id}>
                     <TooltipTrigger asChild><TabsTrigger value={id} aria-label={label}><Icon size={15} /></TabsTrigger></TooltipTrigger>
@@ -272,7 +312,7 @@ export default function App() {
 
         {/* Actions */}
         <div className="island absolute top-3 z-20 flex items-center gap-1 p-1.5" style={{ right: 12 + insetRight }}>
-          <AgentIndicator agents={agents} manifest={manifest} onFocus={(id) => { setTab("canvas"); setTimeout(() => canvas.current?.focus(id), 60); }} />
+          <AgentIndicator agents={agents} manifest={manifest} onFocus={(id) => { setTab("canvas"); setTimeout(() => canvas.current?.focus(id), 60); }} onJobs={() => setPanel("jobs")} />
           <ThemeToggle />
           <SettingsPopover manifest={manifest} />
           <Tooltip>
@@ -336,7 +376,20 @@ export default function App() {
             await api.prompt(`Fix these ${fs.length} problems Lou found in the project, one by one. Keep each change as small as it can be.\n\n${fs.map((f, i) => `${i + 1}. ${f.fix}`).join("\n")}`, conn?.id ?? null, "direct");
           }}
         />}
+        {louOn && louNote && (
+          <div className="island fixed right-6 bottom-[104px] z-40 w-[340px] rounded-[14px] px-3.5 py-3" role="status">
+            <div className="mb-1.5 flex items-center gap-2 text-[13px] font-medium">
+              <span className="min-w-0 flex-1 truncate">Lou checked “{(louNote.prompt ?? "your change").slice(0, 50)}”</span>
+              <button type="button" aria-label="Dismiss" onClick={() => setLouNote(null)} className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"><X size={12} /></button>
+            </div>
+            <CheckResult entry={louNote} manifest={manifest} />
+            {louNote.check?.issues[0] && (
+              <Button variant="ghost" size="sm" className="mt-1 h-7 px-2 text-xs" onClick={() => { const id = louNote.check!.issues[0].viewId; setLouNote(null); setTab("canvas"); openFocus(id); }}>Show the page</Button>
+            )}
+          </div>
+        )}
         <ShortcutsDialog />
+        <UpdateBanner running={chat.prompts.filter((x) => ["sending", "delivered"].includes(x.status)).length} />
 
         {!connected && (
           <div role="status" className="island absolute top-[68px] left-1/2 z-30 -translate-x-1/2 px-3.5 py-2 text-muted-foreground">

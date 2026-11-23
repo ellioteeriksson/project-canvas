@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { GearSix, ArrowsClockwise, ArrowCounterClockwise, Images, Keyboard } from "@phosphor-icons/react";
+import { askToNotify } from "@/lib/notify";
 import { usePref } from "@/lib/prefs";
 import type { Manifest } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -16,6 +17,8 @@ export function SettingsPopover({ manifest }: { manifest: Manifest }) {
   useEffect(() => setDevUrl(manifest.devUrl), [manifest.devUrl]);
   useEffect(() => setPreview(manifest.previewRoute ?? ""), [manifest.previewRoute]);
   const [lou, setLou] = usePref("lou", true);
+  const [sound, setSound] = usePref("sound", true);
+  const [notes, setNotes] = usePref("notifications", true);
 
   return (
     <Popover>
@@ -107,6 +110,14 @@ export function SettingsPopover({ manifest }: { manifest: Manifest }) {
           <label className="flex items-center justify-between gap-3 text-[13px]">
             <span>Show Lou, the helper</span>
             <input type="checkbox" checked={lou} onChange={(e) => setLou(e.target.checked)} className="size-4 accent-[var(--scope)]" />
+          </label>
+          <label className="flex items-center justify-between gap-3 text-[13px]">
+            <span>Chime when a job is done or Claude needs you</span>
+            <input type="checkbox" checked={sound} onChange={(e) => setSound(e.target.checked)} className="size-4 accent-[var(--scope)]" />
+          </label>
+          <label className="flex items-center justify-between gap-3 text-[13px]">
+            <span>Notify me when Loupe isn't in front</span>
+            <input type="checkbox" checked={notes} onChange={(e) => { setNotes(e.target.checked); if (e.target.checked) askToNotify(); }} className="size-4 accent-[var(--scope)]" />
           </label>
           <Button variant="ghost" size="sm" className="-ml-2 self-start" onClick={() => window.dispatchEvent(new Event("loupe:shortcuts"))}><Keyboard size={14} /> Keyboard shortcuts</Button>
         </div>

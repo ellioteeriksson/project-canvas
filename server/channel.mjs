@@ -455,9 +455,16 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     return { ok: true };
   }
 
-  function cancel(id) {
+  /** A job moved to another of Loupe's Claudes before it started */
+  function reassign(id, conn) {
     const p = prompts.find((x) => x.id === id);
-    if (p && (p.status === "queued" || p.status === "sketching")) {
+    if (!p || !conns.get(conn)) return;
+    p.conn = conn; p.session = conns.get(conn)?.session || null;
+    changed();
+  }
+  function cancel(id, { queuedInSession = false } = {}) {
+    const p = prompts.find((x) => x.id === id);
+    if (p && (p.status === "queued" || p.status === "sketching" || (queuedInSession && p.status === "sending"))) {
       if (p.status === "sketching") engine?.cancel(p.id);
       p.status = "cancelled"; onEvent("cancelled", p, null); changed(); return { ok: true };
     }
@@ -482,5 +489,5 @@ export function createChannelHub({ root, broadcast, scopeFor, isBusy, onEvent = 
     return [...conns.values()].filter((c) => c.session === session).map((c) => `conn:${c.id}`);
   }
 
-  return { progress, setConceptEngine, conceptPart, conceptProgress, attach, setManaged, detach, openPromptOf, promptById, rulesCheck, findings, connKeys, stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
+  return { progress, reassign, setConceptEngine, conceptPart, conceptProgress, attach, setManaged, detach, openPromptOf, promptById, rulesCheck, findings, connKeys, stream, waiting, ack, requeue, reply, permissionRequest, claim, activity, submit, cancel, verdict, clear, summary, push, concepts, choose, again, stopListening };
 }

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CaretDown, CaretUp, DesktopTower, DeviceMobile } from "@phosphor-icons/react";
+import { ArrowLeft, CaretDown, CaretUp, Columns, DesktopTower, DeviceMobile } from "@phosphor-icons/react";
 import { frameUrl } from "@/lib/api";
-import type { Agent, ChatState, Manifest, PageSection, PickedElement, Selection } from "@/lib/types";
+import type { Agent, CanvasPrompt, ChangelogEntry, ChatState, Manifest, PageSection, PickedElement, Selection } from "@/lib/types";
+import { api } from "@/lib/api";
+import { ChangeReview, Note } from "@/components/change-review";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -16,9 +18,13 @@ type Props = {
   manifest: Manifest; viewId: string; device: "desktop" | "mobile"; chat: ChatState; agents: Agent[]; edits: Record<string, number>;
   selection: Selection | null; scopeName: string | null; target: string | null; insetLeft: number; insetRight: number;
   onView: (id: string) => void; onDevice: (d: "desktop" | "mobile") => void; onClose: () => void;
-  onSection: (viewId: string, index: number | null, section?: PageSection, list?: PageSection[]) => void;
+  onSection: (viewId: string, index: number | null, section?: PageSection, list?: PageSection[], add?: boolean) => void;
   onElements: (viewId: string, els: PickedElement[]) => void; onConcepts: (id: string) => void;
+  basket: BasketItem[]; onClearBasket: () => void; changelog: ChangelogEntry[]; onCompare: (viewId: string) => void;
 };
+
+/** A section collected with ⇧-click for one prompt across sections (and pages) */
+export type BasketItem = { id: string; viewId: string; viewName: string; index: number; name: string; device: "desktop" | "mobile"; live: PageSection | null; liveList: PageSection[] | null };
 
 /**
  * A page up close: hover a section, click it, and write what should change right there.
@@ -34,9 +40,17 @@ export function PageFocus(p: Props) {
   const [size, setSize] = useState({ w: 1200, h: 700 });
   const [list, setList] = useState<PageSection[]>([]);
   const [rect, setRect] = useState<{ top: number; bottom: number; left: number; width: number } | null>(null);
-  const [sentAt, setSentAt] = useState(0);
+  // What you've done from this view: prompts sent and text edits, until you keep or undo them
+  const [mine, setMine] = useState<{ prompts: string[]; entries: string[] }>({ prompts: [], entries: [] });
+  const [settled, setSettled] = useState<Set<string>>(new Set());
+  const [notice, setNotice] = useState<{ text: string; tone?: "plain" | "warn" } | null>(null);
+  const settle = (...ids: (string | undefined)[]) => setSettled((s) => { const n = new Set(s); ids.forEach((i) => i && n.add(i)); return n; });
+  const addPrompts = (ps: CanvasPrompt[]) => setMine((m) => ({ ...m, prompts: [...m.prompts, ...ps.map((x) => x.id)] }));
   const [reloadKey, setReloadKey] = useState(0);
   const scrollRatio = useRef(0);
+  // While you edit text on the page, nothing may pull the keyboard to the prompt box
+  const editingText = useRef(false);
+  const focusInput = (ms: number) => setTimeout(() => { if (!editingText.current) input.current?.focus(); }, ms);
 
   const sel = p.selection;
   const selIndex = sel?.kind === "section" && sel.viewId === view?.id ? Number(String(sel.id).split("::")[1]) : null;
@@ -60,12 +74,16 @@ export function PageFocus(p: Props) {
       if (!d || d.source !== "project-canvas" || e.source !== frame.current?.contentWindow || !view) return;
       if (d.type === "sections") setList(d.list ?? []);
       if (d.type === "section-picked") {
-        setList((l) => (d.count && l.length !== d.count ? l : l));
-        p.onSection(view.id, d.index, d.section, list.length ? list : undefined);
-        setTimeout(() => input.current?.focus(), 30);
+        p.onSection(view.id, d.index, d.section, d.list ?? (list.length ? list : undefined), !!d.add);
+        focusInput(260);
       }
+      if (d.type === "text-edit-unavailable") setNotice({ text: "Only plain text can be edited in place. Click its section and tell Claude instead.", tone: "warn" });
+      if (d.type === "text-editing") editingText.current = !!d.on;
+      if (d.type === "text-editing" && d.on) setNotice({ text: "Editing text: Enter saves, Shift+Enter adds a line break, Esc cancels." });
+      if (d.type === "text-editing" && !d.on) setNotice(null);
+      if (d.type === "text-edited") saveText(d);
       if (d.type === "section-rect") setRect(d.rect);
-      if (d.type === "picked" && d.elements?.length) { setRect(null); p.onElements(view.id, d.elements); setTimeout(() => input.current?.focus(), 30); }
+      if (d.type === "picked" && d.elements?.length) { setRect(null); p.onElements(view.id, d.elements); focusInput(30); }
       if (d.type === "scrolled") scrollRatio.current = d.ratio;
       if (d.type === "mutation" && d.id === pendingEdit.current) pendingEdit.current = null;
     };
@@ -73,13 +91,28 @@ export function PageFocus(p: Props) {
     return () => window.removeEventListener("message", onMsg);
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Double-clicked text was changed on the page: write it to the source (or have Claude do it)
+  const saveText = async (d: { before: string; after: string; element?: { selector?: string }; section?: number; sectionData?: PageSection | null; list?: PageSection[] }) => {
+    if (!view) return;
+    setNotice({ text: "Saving the text…" });
+    const r = await api.textEdit({ viewId: view.id, before: d.before, after: d.after, selector: d.element?.selector, section: d.section, sectionData: d.sectionData, list: d.list, device: p.device })
+      .catch(() => ({ ok: false, error: "The canvas server didn't answer" } as { ok: false; error: string }));
+    if (!r.ok) { setNotice({ text: ("error" in r && r.error) || "Couldn't save the text", tone: "warn" }); return; }
+    if (r.via === "file" && r.entry) { setMine((m) => ({ ...m, entries: [...m.entries, r.entry!] })); setNotice(null); }
+    else if (r.prompt) { addPrompts([r.prompt]); setNotice({ text: r.reason === "ambiguous" ? "That text is used in several places, so Claude is changing the right one." : "That text isn't written in the page itself, so Claude is finding where it comes from." }); }
+  };
+
   // Turn on section focus once the page has loaded (and again after it reloads)
+  const marks = p.basket.filter((b) => b.viewId === view?.id).map((b) => b.index);
   const start = () => {
     const w = frame.current?.contentWindow;
     host(w, { type: "focus", on: true, section: selIndex });
     host(w, { type: "scroll-sync", on: true });
+    host(w, { type: "focus-marks", indices: marks });
     if (scrollRatio.current) host(w, { type: "scroll-to", ratio: scrollRatio.current });
   };
+  useEffect(() => { host(frame.current?.contentWindow, { type: "focus-marks", indices: marks }); }, [marks.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!notice || notice.text.startsWith("Editing")) return; const t = setTimeout(() => setNotice(null), 6000); return () => clearTimeout(t); }, [notice]);
   useEffect(() => { setList([]); setRect(null); }, [view?.id, p.device]);
 
   // Claude changed this page: if hot reload doesn't show it, reload (keeping the scroll position and section)
@@ -120,7 +153,7 @@ export function PageFocus(p: Props) {
 
   const scoped = selIndex !== null || !!elementsHere;
   // Ready to type as soon as a section or element is picked
-  useEffect(() => { if (scoped) setTimeout(() => input.current?.focus(), 40); }, [scoped, sel?.id]);
+  useEffect(() => { if (scoped) focusInput(280); }, [scoped, sel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!view || !base) return null;
   const i = views.findIndex((v) => v.id === view.id);
@@ -128,8 +161,44 @@ export function PageFocus(p: Props) {
   const frameLeft = (size.w - W * scale) / 2;
   const anchorTop = rect ? Math.min(Math.max(rect.bottom * scale + 10, 12), size.h - 170) : size.h - 170;
   const anchorLeft = rect ? Math.min(Math.max(frameLeft + (rect.left + rect.width / 2) * scale - COMPOSER_W / 2, 12), size.w - COMPOSER_W - 12) : (size.w - COMPOSER_W) / 2;
-  const latest = [...p.chat.prompts].reverse().find((x) => x.mode !== "audit" && x.at >= sentAt - 1000 && sentAt);
   const to = resolveTarget(liveConns(p.chat), p.target);
+  const pages = new Set(p.basket.map((b) => b.viewId)).size;
+  const batch = p.basket.length >= 2 ? {
+    label: `${p.basket.length} sections${pages > 1 ? ` on ${pages} pages` : ""}`,
+    items: p.basket.map((b) => ({ id: b.id, device: b.device, live: b.live, liveList: b.liveList })),
+    onClear: p.onClearBasket,
+  } : null;
+
+  // Everything you started here that's still running or waiting for your OK, oldest first
+  type Item = { key: string; at: number; prompt?: CanvasPrompt; entry?: ChangelogEntry };
+  const items: Item[] = [];
+  for (const id of mine.prompts) {
+    const pr = p.chat.prompts.find((x) => x.id === id);
+    if (!pr || settled.has(id) || pr.status === "cancelled" || (pr.mode === "concepts" && pr.status === "done")) continue;
+    const entry = p.changelog.find((e) => e.promptId === id && !e.inProgress);
+    if (entry && (entry.undone || settled.has(entry.id))) continue;
+    items.push({ key: id, at: pr.at, prompt: pr, entry: entry?.after ? entry : undefined });
+  }
+  for (const id of mine.entries) {
+    const entry = p.changelog.find((e) => e.id === id);
+    if (!entry || entry.undone || settled.has(id)) continue;
+    items.push({ key: id, at: entry.at, entry });
+  }
+  items.sort((a, b) => a.at - b.at);
+  const near = scoped ? items[items.length - 1] : undefined;
+  const rest = near ? items.slice(0, -1) : items;
+
+  const renderItem = (it: Item) => {
+    const pr = it.prompt;
+    if (pr && ["queued", "sending", "delivered"].includes(pr.status)) {
+      return pr.steps?.length
+        ? <><p className="mb-1 truncate text-xs font-medium">{pr.text}</p><LiveSteps p={pr} /></>
+        : <PromptState p={pr} conns={p.chat.conns} agents={p.agents} compact onConcepts={p.onConcepts} />;
+    }
+    if (it.entry) return <ChangeReview entry={it.entry} manifest={p.manifest} title={pr?.text} note={pr?.reply} onSettle={() => settle(it.key, it.entry?.id)} onFix={(np) => addPrompts([np])} onCompare={() => p.onCompare(view.id)} />;
+    if (pr?.status === "done") return <Note onClose={() => settle(it.key)}><p className="truncate font-medium">{pr.text}</p><p className="line-clamp-3 text-muted-foreground">{pr.reply || "Done, no files changed."}</p></Note>;
+    return <Note tone="warn" onClose={() => settle(it.key)}><PromptState p={pr!} conns={p.chat.conns} agents={p.agents} compact onConcepts={p.onConcepts} /></Note>;
+  };
 
   return (
     <div className="absolute inset-y-0 z-30 flex flex-col bg-[var(--paper)] pt-3" style={{ left: p.insetLeft > 12 ? p.insetLeft : 0, right: p.insetRight }}>
@@ -149,8 +218,10 @@ export function PageFocus(p: Props) {
             </button>
           ))}
         </div>
-        <span className="hidden items-center gap-1 px-2 text-xs text-muted-foreground lg:flex">
-          Click a section · <Kbd>⌥</Kbd> click an element · <Kbd>⌘</Kbd> click to use the page
+        <span className="h-5 w-px bg-border" />
+        <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => p.onCompare(view.id)} title="See the original next to the latest draft"><Columns size={14} /> Compare</Button>
+        <span className="hidden items-center gap-1 px-2 text-xs text-muted-foreground xl:flex">
+          Click a section · <Kbd>⇧</Kbd> several · double-click text to edit · <Kbd>⌥</Kbd> an element · <Kbd>⌘</Kbd> use the page
         </span>
       </header>
 
@@ -182,11 +253,11 @@ export function PageFocus(p: Props) {
 
           {/* Claude asking for permission shows up here too, since the prompt bar is hidden */}
           {p.chat.permissions.length > 0 && (
-            <div className="absolute right-24 bottom-4 z-30 flex w-[min(520px,80%)] flex-col gap-2">
+            <div className="absolute top-3 right-3 z-30 flex w-[min(460px,60%)] flex-col gap-2">
               <PermissionStack perms={p.chat.permissions} conns={p.chat.conns} />
             </div>
           )}
-          {scoped ? (
+          {scoped && (
             <div className="absolute z-20 flex flex-col gap-2" style={{ top: anchorTop, left: anchorLeft, width: COMPOSER_W }}>
               <Composer
                 to={to.id}
@@ -194,31 +265,26 @@ export function PageFocus(p: Props) {
                 className="shadow-soft-lg ring-2 ring-scope/50"
                 scopeName={p.scopeName}
                 selection={p.selection}
+                batch={batch}
                 onClearScope={() => { p.onSection(view.id, null); setRect(null); host(frame.current?.contentWindow, { type: "focus-section", index: null }); }}
                 onConcepts={p.onConcepts}
-                placeholder={to.id ? `What should change in ${p.scopeName ?? "this section"}?` : "Open Claude Code in this project (/loupe) to prompt"}
-                onSent={() => setSentAt(Date.now())}
+                placeholder={!to.id ? "Open Claude Code in this project (/loupe) to prompt" : batch ? `What should change in these ${p.basket.length} sections?` : `What should change in ${p.scopeName ?? "this section"}?`}
+                onSent={(ps) => { addPrompts(ps); if (batch) p.onClearBasket(); }}
               />
-              {latest && latest.status === "delivered" && latest.steps?.length ? (
-                <div className="island rounded-[14px] px-3.5 py-2.5">
-                  <LiveSteps p={latest} />
-                </div>
-              ) : latest && (
-                <div className="island flex items-center gap-2 self-start rounded-full py-1.5 pr-3.5 pl-3 text-xs">
-                  <PromptState p={latest} conns={p.chat.conns} agents={p.agents} compact onConcepts={p.onConcepts} />
-                </div>
-              )}
+              {near && <div className="island rounded-[14px] px-3.5 py-2.5">{renderItem(near)}</div>}
             </div>
-          ) : latest && ["queued", "sending", "delivered"].includes(latest.status) ? (
-            // Claude is still on it: keep showing what it's doing, even with no section picked
-            <div className="island absolute bottom-5 left-5 z-20 w-[min(440px,42%)] rounded-[14px] px-3.5 py-2.5">
-              {latest.steps?.length ? (
-                <><p className="mb-1 truncate text-xs font-medium">{latest.text}</p><LiveSteps p={latest} /></>
-              ) : <PromptState p={latest} conns={p.chat.conns} agents={p.agents} compact onConcepts={p.onConcepts} />}
+          )}
+
+          {/* The rest of what you started here, and notes */}
+          {(rest.length > 0 || notice) && (
+            <div className="absolute bottom-5 left-5 z-20 flex max-h-[55%] w-[min(440px,42%)] flex-col gap-2 overflow-y-auto">
+              {rest.map((it) => <div key={it.key} className="island shrink-0 rounded-[14px] px-3.5 py-2.5">{renderItem(it)}</div>)}
+              {notice && <div className="island shrink-0 rounded-[14px] px-3.5 py-2.5"><Note tone={notice.tone} onClose={() => setNotice(null)}>{notice.text}</Note></div>}
             </div>
-          ) : (
+          )}
+          {!scoped && !items.length && !notice && (
             <p className="pointer-events-none absolute bottom-6 left-1/2 z-20 -translate-x-1/2 rounded-full bg-foreground/85 px-4 py-2 text-[13px] text-background shadow-lg">
-              Click the section you want to change
+              Click a section to change it · ⇧-click to pick several · double-click text to edit it
             </p>
           )}
         </div>

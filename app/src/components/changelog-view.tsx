@@ -130,7 +130,7 @@ export function ChangelogView({ manifest, entries }: { manifest: Manifest; entri
 }
 
 /** What a page looked like before and after a change: drag the divider to compare */
-function BeforeAfter({ shots, manifest }: { shots: Record<string, ChangeShot>; manifest: Manifest }) {
+export function BeforeAfter({ shots, manifest }: { shots: Record<string, ChangeShot>; manifest: Manifest }) {
   const ids = Object.keys(shots).filter((k) => shots[k].after || shots[k].before);
   const [view, setView] = useState(ids[0]);
   const [pos, setPos] = useState(50);
@@ -200,7 +200,7 @@ function ChangeActions({ e }: { e: ChangelogEntry }) {
         <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={showDiff} aria-expanded={diff !== null}>
           {loading ? <CircleNotch size={13} className="animate-spin" /> : <Code size={13} />} {diff !== null ? "Hide code changes" : "Code changes"}
         </Button>
-        {!e.undone && !e.kind && (
+        {!e.undone && e.kind !== "undo" && e.kind !== "restore" && (
           <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" disabled={state.busy || state.done} onClick={() => undo(false)}>
             {state.busy ? <CircleNotch size={13} className="animate-spin" /> : <ArrowCounterClockwise size={13} />} {state.done ? "Undone" : "Undo this change"}
           </Button>

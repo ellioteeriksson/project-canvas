@@ -263,7 +263,10 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     const b = document.createElement("div");
     b.className = cls;
     b.style.cssText = `position:absolute;left:${r.left + scrollX}px;top:${r.top + scrollY}px;width:${r.width}px;height:${r.height}px;box-sizing:border-box;pointer-events:none;` +
-      (cls === "pc-hover" ? "outline:2px solid #0d99ff;background:rgba(13,153,255,.08);" : "outline:2px solid #0d99ff;background:rgba(13,153,255,.16);");
+      (cls === "pc-hover" ? "outline:2px solid #0d99ff;background:rgba(13,153,255,.08);"
+        : cls === "pc-marked" ? "outline:2px dashed #0d99ff;background:rgba(13,153,255,.10);"
+        : cls === "pc-editing" ? "outline:2px solid #8a6bff;outline-offset:3px;border-radius:3px;"
+        : "outline:2px solid #0d99ff;background:rgba(13,153,255,.16);");
     if (label) {
       const t = document.createElement("div");
       t.textContent = label;
@@ -465,7 +468,8 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
   }
 
   /* ---------- focus: hover a section, click it to prompt about it (⌘-click still clicks the page) ---------- */
-  let focusing = false, secList = [], secHover = -1, secSel = -1, secAt = 0, rectRaf = 0;
+  let focusing = false, secList = [], secHover = -1, secSel = -1, secAt = 0, rectRaf = 0, secMarks = [];
+  let editing = null; // { el, before, html } while you edit text on the page
   const sections = () => {
     if (Date.now() - secAt > 1500) { try { secList = detectSections(); } catch { secList = []; } secAt = Date.now(); }
     return secList;
@@ -475,11 +479,18 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     const l = layer();
     const list = sections();
     const parts = [];
+    // Sections collected for one prompt (shift-click)
+    for (const i of secMarks) {
+      const x = list[i];
+      if (i === secSel || !x?.el?.isConnected) continue;
+      parts.push(box(x.el, "pc-marked", `${x.name || `Section ${i + 1}`}`));
+    }
     for (const [i, cls] of [[secSel, "pc-chosen"], [secHover !== secSel ? secHover : -1, "pc-hover"]]) {
       const x = list[i];
       if (!x?.el?.isConnected) continue;
       parts.push(box(x.el, cls, `${x.name || `Section ${i + 1}`}`));
     }
+    if (editing?.el?.isConnected) parts.push(box(editing.el, "pc-editing", "Editing text · Enter saves · Esc cancels"));
     l.replaceChildren(...parts);
   }
   function sendRect() {
@@ -491,7 +502,7 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
       post({ type: "section-rect", index: secSel, rect: { top: r.top, bottom: r.bottom, left: r.left, width: r.width }, vh: innerHeight });
     });
   }
-  function pickSection(i, scroll) {
+  function pickSection(i, scroll, add) {
     const list = sections();
     if (i < 0 || i >= list.length) return;
     secSel = i;
@@ -499,7 +510,7 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     if (scroll) x.el.scrollIntoView({ block: x.el.getBoundingClientRect().height > innerHeight * 0.8 ? "start" : "center", behavior: "smooth" });
     drawFocus();
     const { el, ...data } = x;
-    post({ type: "section-picked", index: i, section: data, count: list.length });
+    post({ type: "section-picked", index: i, section: data, count: list.length, add: !!add, list: list.map(({ el: _e, ...d }) => d) });
     sendRect();
     setTimeout(sendRect, 400);
   }
@@ -511,14 +522,83 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
   }
   function onFocusClick(e) {
     if (!focusing || e.metaKey || e.ctrlKey) return; // ⌘-click uses the page as normal
+    // While you edit text, clicks inside it place the caret; a click elsewhere saves it
+    if (editing && editing.el.contains(e.target)) { if (e.type === "click" || e.type === "submit") e.preventDefault(); return; }
     e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-    if (e.type !== "click") return;
     const el = document.elementFromPoint(e.clientX, e.clientY);
     if (ignore(el)) return;
+    // Double-click text to change it right here
+    if (e.type === "dblclick") { startTextEdit(el); return; }
+    if (e.type !== "click") return;
+    if (editing) { endTextEdit(true); return; }
+    // The second click of a double-click is for editing text, not picking again
+    if (e.detail >= 2) return;
     // ⌥-click picks the element itself instead of its section
     if (e.altKey) { post({ type: "picked", elements: [describe(el)] }); return; }
     const i = secIndexAt(el);
-    if (i >= 0) pickSection(i, false);
+    // ⇧-click collects several sections for one prompt
+    if (i >= 0) pickSection(i, false, e.shiftKey);
+  }
+
+  /* ---------- edit text in place ---------- */
+  const TEXTY = "h1,h2,h3,h4,h5,h6,p,a,button,li,span,label,figcaption,blockquote,dt,dd,td,th,small,strong,em,b,i,q,cite,summary,legend,caption,time";
+  const BLOCKY = "div,section,article,header,footer,main,nav,aside,ul,ol,table,form,img,svg,video,picture,canvas,iframe,input,textarea,select";
+  function textTarget(el) {
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      if (ignore(n)) return null;
+      if (!n.matches?.(TEXTY)) continue;
+      if (n.querySelector(BLOCKY)) return null;
+      const t = (n.innerText || "").trim();
+      if (!t || t.length > 1500) return null;
+      // A short inline bit inside a sentence: edit the whole sentence
+      const up = n.parentElement;
+      if (n.matches("span,strong,em,b,i,small,q,cite,time") && up?.matches?.(TEXTY) && !up.querySelector(BLOCKY)) continue;
+      return n;
+    }
+    return null;
+  }
+  function startTextEdit(el) {
+    const t = textTarget(el);
+    if (!t) { post({ type: "text-edit-unavailable" }); return; }
+    if (editing) endTextEdit(true);
+    // Show (and read) the text as written, not as CSS transforms it (uppercase labels and the like)
+    const tt = t.style.textTransform;
+    if (getComputedStyle(t).textTransform !== "none") t.style.textTransform = "none";
+    editing = { el: t, before: t.innerText, html: t.innerHTML, ce: t.getAttribute("contenteditable"), tt, ol: t.style.outline };
+    t.style.outline = "none";
+    t.setAttribute("contenteditable", "plaintext-only");
+    if (t.contentEditable !== "plaintext-only") t.setAttribute("contenteditable", "true");
+    t.focus();
+    const r = document.createRange(); r.selectNodeContents(t);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    t.addEventListener("keydown", onEditKey, true);
+    t.addEventListener("blur", onEditBlur, true);
+    drawFocus();
+    post({ type: "text-editing", on: true });
+  }
+  function onEditKey(e) {
+    e.stopPropagation();
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); endTextEdit(true); }
+    if (e.key === "Escape") { e.preventDefault(); endTextEdit(false); }
+  }
+  function onEditBlur() { setTimeout(() => editing && endTextEdit(true), 0); }
+  function endTextEdit(save) {
+    const ed = editing;
+    if (!ed) return;
+    editing = null;
+    const t = ed.el;
+    t.removeEventListener("keydown", onEditKey, true);
+    t.removeEventListener("blur", onEditBlur, true);
+    if (ed.ce === null) t.removeAttribute("contenteditable"); else t.setAttribute("contenteditable", ed.ce);
+    const after = t.innerText;
+    t.style.textTransform = ed.tt;
+    t.style.outline = ed.ol;
+    if (!save || after.trim() === ed.before.trim()) { if (!save) t.innerHTML = ed.html; drawFocus(); post({ type: "text-editing", on: false }); return; }
+    const i = secIndexAt(t);
+    const strip = ({ el: _e, ...d }) => d;
+    const list = sections();
+    post({ type: "text-edited", before: ed.before, after, element: describe(t), section: i, sectionData: list[i] ? strip(list[i]) : null, list: list.map(strip) });
+    drawFocus();
   }
   const onFocusScroll = () => { if (secSel >= 0) sendRect(); };
   function setFocusing(on) {
@@ -538,7 +618,8 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
       removeEventListener("scroll", onFocusScroll);
       removeEventListener("resize", onFocusScroll);
       document.documentElement.style.cursor = "";
-      secHover = secSel = -1;
+      if (editing) endTextEdit(false);
+      secHover = secSel = -1; secMarks = [];
       document.getElementById("pc-pick-layer")?.remove();
     }
   }
@@ -787,6 +868,65 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
    */
   if (SHOT) {
     window.__loupeShot = {
+      /** Quick health check after a change: things that broke, that people notice */
+      check() {
+        const issues = [];
+        const where = (el) => {
+          const d = describe(el);
+          const text = (el.innerText || el.alt || "").replace(/\s+/g, " ").trim().slice(0, 60);
+          return { selector: d.selector, text, section: (() => { try { const i = detectSections().findIndex((x) => x.el.contains(el)); return i >= 0 ? i : null; } catch { return null; } })() };
+        };
+        const vw = document.documentElement.clientWidth;
+        // Sideways scrolling: something sticks out past the screen
+        if (document.documentElement.scrollWidth > vw + 2) {
+          const wide = [];
+          for (const el of document.body.querySelectorAll("*")) {
+            if (wide.length >= 3) break;
+            const r = el.getBoundingClientRect();
+            if (r.width && r.right > vw + 2 && r.left < vw && getComputedStyle(el).position !== "fixed" && !wide.some((w) => w.contains(el))) wide.push(el);
+          }
+          issues.push({ kind: "overflow", message: `The page scrolls sideways (${document.documentElement.scrollWidth - vw}px too wide)`, at: wide.map(where) });
+        }
+        // Images that didn't load
+        const broken = [...document.images].filter((i) => i.complete && i.naturalWidth === 0 && i.getAttribute("src") && i.getBoundingClientRect().width > 0);
+        if (broken.length) issues.push({ kind: "image", message: `${broken.length} image${broken.length > 1 ? "s" : ""} didn't load`, at: broken.slice(0, 3).map(where) });
+        // Text too faint to read (WCAG AA)
+        const lum = ([r, g, b]) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+        const rgba = (s) => { const m = s.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[\s,/]+/).map(Number); return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1]; };
+        const bgOf = (el) => {
+          for (let n = el; n; n = n.parentElement) {
+            const cs = getComputedStyle(n);
+            if (cs.backgroundImage && cs.backgroundImage !== "none") return null; // over an image or gradient: can't tell
+            const c = rgba(cs.backgroundColor);
+            if (c && c[3] > 0.9) return c;
+          }
+          return [255, 255, 255, 1];
+        };
+        const faint = [];
+        const seen = new Set();
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        let n, count = 0;
+        while ((n = walker.nextNode()) && count < 600) {
+          const el = n.parentElement;
+          if (!el || seen.has(el) || !n.textContent.trim() || el.closest("[data-project-canvas], script, style, noscript")) continue;
+          seen.add(el); count++;
+          const r = el.getBoundingClientRect();
+          if (!r.width || !r.height) continue;
+          const cs = getComputedStyle(el);
+          if (cs.visibility === "hidden" || Number(cs.opacity) < 0.2) continue;
+          const fg = rgba(cs.color), bg = bgOf(el);
+          if (!fg || !bg) continue;
+          const a = fg[3];
+          const mix = [0, 1, 2].map((i) => fg[i] * a + bg[i] * (1 - a));
+          const L1 = lum(mix), L2 = lum(bg);
+          const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+          const size = parseFloat(cs.fontSize), bold = Number(cs.fontWeight) >= 700;
+          const need = size >= 24 || (bold && size >= 18.66) ? 3 : 4.5;
+          if (ratio < need) faint.push({ el, ratio });
+        }
+        if (faint.length) issues.push({ kind: "contrast", message: `${faint.length} bit${faint.length > 1 ? "s" : ""} of text ${faint.length > 1 ? "are" : "is"} hard to read (contrast below WCAG AA; lowest ${Math.min(...faint.map((f) => f.ratio)).toFixed(1)}:1)`, at: faint.sort((a, b) => a.ratio - b.ratio).slice(0, 3).map((f) => ({ ...where(f.el), ratio: Math.round(f.ratio * 10) / 10 })) });
+        return issues;
+      },
       async prepare({ wire: wireOn = false, minWait = 900 } = {}) {
         await new Promise((r) => (document.readyState === "complete" ? r() : window.addEventListener("load", r, { once: true })));
         await sleep(minWait); // intros and hydration
@@ -887,6 +1027,7 @@ html.pc-wire ::placeholder { color: transparent !important; }`;
     if (d.type === "wireframe") { if (d.on || wire) afterHydration(() => setWire(!!d.on)); }
     if (d.type === "pick") afterHydration(() => setPicking(!!d.on, d.selectors));
     if (d.type === "focus") afterHydration(() => { setFocusing(!!d.on); if (d.on && d.section != null) pickSection(d.section, true); });
+    if (d.type === "focus-marks") { secMarks = Array.isArray(d.indices) ? d.indices : []; drawFocus(); }
     if (d.type === "focus-section") { secAt = 0; if (d.index == null) { secSel = -1; drawFocus(); } else pickSection(d.index, true); }
     if (d.type === "inspect") afterHydration(() => setInspecting(!!d.on));
     if (d.type === "inspect-selector") afterHydration(() => { setInspecting(true); inspectSelector(d.selector); });

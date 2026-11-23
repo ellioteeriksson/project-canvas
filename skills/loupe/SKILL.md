@@ -141,3 +141,10 @@ If the scanner misses something, add it through `config.json` (`views`, `framewo
 ## The Ship button
 
 The top-right **Ship** button runs, on the user's machine: `git add -A`, then `git commit`, `git push -u origin HEAD` and `gh pr create`. If they're on the default branch when they open a PR, it first creates a `canvas/<slug>-<timestamp>` branch. **Write with Claude** in the dialog runs `claude -p` on the diff to draft the commit message. You don't need to do anything for this. If the user asks you to commit or open a PR from the terminal, do it normally.
+
+### Jobs from Loupe
+
+- **Text changes:** “Change the text “…” to exactly “…””. Loupe tried to write it straight into the source and couldn't (the text comes from a component, a CMS or a data file, or appears in several places). Find the right source, change only that text, keep the markup.
+- **Batches:** one request can arrive as several prompts, one per section (“part 2 of 4 of one request”). Other Claudes may do the other parts at the same time: do yours, and keep the approach consistent.
+- **Fixes after a check:** “Fix what broke on …” lists what Loupe's check found after a change (sideways scrolling, images that didn't load, low contrast, script errors), with selectors. Fix those without undoing the change itself.
+- **Matching a reference:** “Make … match the reference picture at .canvas/references/…”. Open the picture, list the differences that matter, then fix them with the project's own components and tokens.

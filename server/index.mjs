@@ -5,6 +5,8 @@
  */
 import http from "node:http";
 import fs from "node:fs";
+import crypto from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
@@ -19,6 +21,8 @@ import { createChangelog } from "./changelog.mjs";
 import { buildScope } from "../scripts/scope.mjs";
 import { remember } from "./registry.mjs";
 import { createShooter } from "./shooter.mjs";
+import { createUpdates } from "./updates.mjs";
+import { createTextEdit } from "./textedit.mjs";
 import { createAgents } from "./agents.mjs";
 import { createHistory } from "./history.mjs";
 import { createComments } from "./comments.mjs";
@@ -166,6 +170,9 @@ function refreshSelection() {
 
 /* ---------------- SSE ---------------- */
 const clients = new Set();
+let updates = null;
+let textEditor = null;
+const textEdit = () => (textEditor ??= createTextEdit({ root: ROOT, history, changelog, log: (m) => console.log(`[loupe] ${m}`) }));
 function broadcast(event, data) {
   const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
   for (const res of clients) res.write(msg);
@@ -234,6 +241,33 @@ async function shootAfter(entry) {
       broadcast("snapshots", snapshots.index);
     } catch {}
   }
+  await checkAfter(entry).catch(() => {});
+}
+/* ---------- a quick check of the pages a change touched, on desktop and mobile ---------- */
+const CHECKS_FILE = path.join(ROOT, CANVAS_DIR, "checks.json");
+let checkBase = (() => { try { return JSON.parse(fs.readFileSync(CHECKS_FILE, "utf8")); } catch { return {}; } })();
+const sig = (i) => `${i.kind}:${(i.at || []).map((a) => a.selector || a.text || "").join("|")}`;
+async function checkAfter(entry) {
+  const base = manifest?.frameUrl || manifest?.devUrl;
+  if (!base || !shooter.available() || loadConfig(ROOT).checkAfterChange === false) return;
+  const found = [];
+  for (const viewId of viewsOf(entry).slice(0, 3)) {
+    const view = manifest?.views.find((v) => v.id === viewId);
+    if (!view?.url || view.dynamic) continue;
+    const url = base.replace(/\/$/, "") + (view.url.startsWith("/") ? view.url : "/" + view.url);
+    for (const device of ["desktop", "mobile"]) {
+      try {
+        const r = await shooter.check({ url, device });
+        const key = `${viewId}|${device}`;
+        const before = new Set(checkBase[key] || []);
+        const known = !!checkBase[key];
+        for (const i of r.issues || []) found.push({ ...i, viewId, device, new: known ? !before.has(sig(i)) : null });
+        checkBase[key] = (r.issues || []).map(sig);
+      } catch (e) { if (!/superseded/.test(String(e?.message))) console.log(`[loupe] check skipped: ${e?.message || e}`); }
+    }
+  }
+  try { fs.writeFileSync(CHECKS_FILE, JSON.stringify(checkBase)); } catch {}
+  changelog.update(entry.id, { check: { at: Date.now(), issues: found } });
 }
 // History pictures no change refers to any more
 setTimeout(() => {
@@ -365,6 +399,7 @@ async function handle(req, res) {
     res.write(`event: agents\ndata: ${JSON.stringify(claudes.list())}\n\n`);
     res.write(`event: comments\ndata: ${JSON.stringify(comments.list())}\n\n`);
     res.write(`event: changelog\ndata: ${JSON.stringify(changelog.list())}\n\n`);
+    res.write(`event: version\ndata: ${JSON.stringify(updates ? updates.info() : { version: VERSION, newer: null })}\n\n`);
     clients.add(res);
     const ping = setInterval(() => res.write(": ping\n\n"), 20_000);
     req.on("close", () => { clients.delete(res); clearInterval(ping); });
@@ -484,7 +519,14 @@ async function handle(req, res) {
     const out = r();
     return send(res, out.ok === false ? 400 : 200, out);
   }
-  if (req.method === "POST" && p === "/api/prompt/cancel") return send(res, 200, hub.cancel((await readBody(req)).id));
+  if (req.method === "POST" && p === "/api/prompt/cancel") {
+    const id = (await readBody(req)).id;
+    // Waiting in one of Loupe's Claudes: take it off that queue first
+    const dropped = claudes.drop(id);
+    return send(res, 200, hub.cancel(id, { queuedInSession: dropped.ok }));
+  }
+  if (req.method === "POST" && p === "/api/jobs/reorder") { const b = await readBody(req); return send(res, 200, claudes.reorder(b.session, b.order)); }
+  if (req.method === "POST" && p === "/api/jobs/move") { const b = await readBody(req); return send(res, 200, claudes.move(b.id, b.to || null)); }
   if (req.method === "POST" && p === "/api/prompt/clear") return send(res, 200, hub.clear());
   if (req.method === "POST" && p === "/api/concepts/choose") { const r = hub.choose(await readBody(req)); return send(res, r.ok ? 200 : 400, r); }
   if (req.method === "POST" && p === "/api/concepts/again") { const r = hub.again(await readBody(req)); return send(res, r.ok ? 200 : 400, r); }
@@ -582,6 +624,138 @@ async function handle(req, res) {
   if (req.method === "POST" && p === "/api/permission") { const b = await readBody(req); return send(res, 200, hub.verdict(b.request_id, b.behavior)); }
 
   if (p === "/api/state") return send(res, 200, { ...readState(), version: VERSION });
+  /* saved prompts: this project's (in .canvas/config.json, shared with the team) and your own for every project */
+  if (p.startsWith("/api/saved-prompts")) {
+    const mineFile = path.join(os.homedir(), ".claude", "loupe", "saved-prompts.json");
+    const readMine = () => { try { const j = JSON.parse(fs.readFileSync(mineFile, "utf8")); return Array.isArray(j) ? j : []; } catch { return []; } };
+    const writeMine = (list) => { fs.mkdirSync(path.dirname(mineFile), { recursive: true }); fs.writeFileSync(mineFile, JSON.stringify(list, null, 2)); };
+    const project = () => { const l = loadConfig(ROOT).savedPrompts; return Array.isArray(l) ? l : []; };
+    const setProject = (list) => { const cfg = loadConfig(ROOT); cfg.savedPrompts = list; saveConfig(ROOT, cfg); };
+    if (req.method === "GET") return send(res, 200, { project: project(), mine: readMine() });
+    const b = await readBody(req);
+    const scope = b.scope === "mine" ? "mine" : "project";
+    const list = scope === "mine" ? readMine() : project();
+    const save = scope === "mine" ? writeMine : setProject;
+    if (p === "/api/saved-prompts/add") {
+      const text = String(b.text || "").trim().slice(0, 2000);
+      if (!text) return send(res, 400, { error: "Write the prompt first" });
+      if (!list.some((x) => x.text === text)) list.push({ id: crypto.randomBytes(4).toString("hex"), text, label: String(b.label || "").trim().slice(0, 60) || null });
+      save(list);
+      return send(res, 200, { ok: true, project: project(), mine: readMine() });
+    }
+    if (p === "/api/saved-prompts/delete") {
+      save(list.filter((x) => x.id !== b.id));
+      return send(res, 200, { ok: true, project: project(), mine: readMine() });
+    }
+    return send(res, 404, { error: "unknown" });
+  }
+  /* edit text right on the page: straight into the source when it's found in one place, otherwise Claude does it */
+  if (p === "/api/text-edit" && req.method === "POST") {
+    const b = await readBody(req);
+    const v = manifest?.views.find((x) => x.id === b.viewId);
+    const files = v ? [v.file, ...(v.files || [])].filter(Boolean) : [];
+    const before = String(b.before || ""), after = String(b.after || "");
+    if (!before.trim() || !after.trim()) return send(res, 400, { error: "Write some text first" });
+    const direct = await textEdit().edit({ before, after, files }).catch((e) => ({ ok: false, reason: String(e.message || e) }));
+    if (direct.ok) {
+      const e = changelog.get(direct.entry);
+      if (e) setTimeout(() => checkAfter(e).catch(() => {}), 1800);
+      return send(res, 200, direct);
+    }
+    // Not in exactly one place (a component, CMS or data file, or used several times): Claude finds the right one
+    let sel = null;
+    try {
+      sel = b.section != null && b.section >= 0
+        ? selectionRecord({ kind: "section", id: `${b.viewId}::${b.section}`, device: b.device || "desktop", live: b.sectionData || null, liveList: Array.isArray(b.list) ? b.list : null })
+        : selectionRecord({ kind: "view", id: b.viewId });
+    } catch {}
+    const conn = claudes.available() ? claudes.dispatch(files, maxClaudes()) : null;
+    const quote = (t) => `“${t.replace(/\s+/g, " ").trim()}”`;
+    const r = hub.submit({
+      text: `Change the text ${quote(before)} to ${quote(after)}`, conn, selection: sel,
+      extra: { body: [
+        `On this page, change the text ${quote(before)} to exactly ${quote(after)}. Change only that text; keep the markup and styling.`,
+        direct.reason === "ambiguous" ? `That text appears in ${direct.count} places in the project: change only the one in the scope above.` : `It may come from a component, a CMS or a data file rather than the page file.`,
+        b.selector ? `The element on the page: ${b.selector}` : null,
+      ].filter(Boolean).join("\n") },
+    });
+    return send(res, r.ok ? 200 : 400, r.ok ? { ok: true, via: "claude", prompt: r.prompt, reason: direct.reason } : r);
+  }
+  /* one prompt for several sections, maybe on several pages: one job per section, side by side across pages */
+  if (p === "/api/prompt-batch" && req.method === "POST") {
+    const b = await readBody(req);
+    const items = Array.isArray(b.items) ? b.items.slice(0, 24) : [];
+    const text = String(b.text || "").trim();
+    if (!text || !items.length) return send(res, 400, { error: "Pick sections and write a prompt" });
+    const names = items.map((x) => x.live?.name || `Section ${Number(String(x.id).split("::")[1]) + 1}`);
+    const out = [];
+    for (const [n, it] of items.entries()) {
+      let sel = null;
+      try { sel = selectionRecord({ kind: "section", id: it.id, device: it.device || "desktop", live: it.live || null, liveList: it.liveList || null }); } catch {}
+      if (!sel) continue;
+      const viewId = String(it.id).split("::")[0];
+      const v = manifest?.views.find((x) => x.id === viewId);
+      const files = v ? [v.file, ...(v.files || [])].filter(Boolean) : [];
+      const conn = b.conn && b.conn !== "auto" ? b.conn : claudes.available() ? claudes.dispatch(files, maxClaudes()) : null;
+      const r = hub.submit({
+        text, conn, selection: sel,
+        extra: { body: `${text}\n\n(This is part ${n + 1} of ${items.length} of one request, made for these sections together: ${names.join(", ")}. Other Claudes may be doing the other parts right now. Do this one, and keep the result consistent with the others (same approach, same tokens).)` },
+      });
+      if (r.ok) out.push(r.prompt);
+    }
+    if (!out.length) return send(res, 400, { error: "Couldn't send to any of those sections" });
+    return send(res, 200, { ok: true, prompts: out });
+  }
+  /* references to compare a page with: a picture (a design, a screenshot) or a URL (the live site) */
+  if (p.startsWith("/api/references")) {
+    const dir = path.join(ROOT, CANVAS_DIR, "references");
+    const indexFile = path.join(dir, "index.json");
+    const readIdx = () => { try { const j = JSON.parse(fs.readFileSync(indexFile, "utf8")); return Array.isArray(j) ? j : []; } catch { return []; } };
+    const writeIdx = (l) => { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(indexFile, JSON.stringify(l, null, 2)); };
+    if (p.startsWith("/api/references/file/")) {
+      const name = path.basename(decodeURIComponent(p.slice("/api/references/file/".length)));
+      return serveFile(res, path.join(dir, name));
+    }
+    if (req.method === "GET") {
+      const view = url.searchParams.get("view");
+      return send(res, 200, { items: readIdx().filter((x) => !view || x.viewId === view || x.viewId === "*") });
+    }
+    if (p === "/api/references/upload" && req.method === "POST") {
+      const type = String(req.headers["content-type"] || "");
+      const ext = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/avif": "avif" }[type.split(";")[0]];
+      if (!ext) return send(res, 400, { error: "Use a PNG, JPG, WebP, GIF or AVIF picture" });
+      const chunks = []; let size = 0;
+      for await (const c of req) { size += c.length; if (size > 25 * 1024 * 1024) return send(res, 413, { error: "That picture is over 25 MB" }); chunks.push(c); }
+      const id = crypto.randomBytes(4).toString("hex");
+      const file = `${id}.${ext}`;
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, file), Buffer.concat(chunks));
+      const item = { id, kind: "image", viewId: url.searchParams.get("view") || "*", name: String(url.searchParams.get("name") || "Reference").slice(0, 80), src: `/api/references/file/${file}`, file, at: Date.now() };
+      writeIdx([...readIdx(), item]);
+      return send(res, 200, { ok: true, item });
+    }
+    const b = await readBody(req);
+    if (p === "/api/references/add") {
+      let u;
+      try { u = new URL(String(b.url || "").trim()); if (!/^https?:$/.test(u.protocol)) throw 0; } catch { return send(res, 400, { error: "Enter a full web address, like https://example.com/about" }); }
+      const item = { id: crypto.randomBytes(4).toString("hex"), kind: "url", viewId: b.viewId || "*", name: String(b.name || u.host + u.pathname).slice(0, 80), src: u.href, at: Date.now() };
+      writeIdx([...readIdx(), item]);
+      return send(res, 200, { ok: true, item });
+    }
+    if (p === "/api/references/delete") {
+      const l = readIdx();
+      const gone = l.find((x) => x.id === b.id);
+      if (gone?.file) { try { fs.renameSync(path.join(dir, gone.file), path.join(dir, `.removed-${gone.file}`)); } catch {} }
+      writeIdx(l.filter((x) => x.id !== b.id));
+      return send(res, 200, { ok: true });
+    }
+    return send(res, 404, { error: "unknown" });
+  }
+  if (p === "/api/version") return send(res, 200, updates ? updates.info() : { version: VERSION, newer: null });
+  if (p === "/api/restart" && req.method === "POST") {
+    const r = updates ? updates.restart() : { ok: false, error: "Not ready yet" };
+    return send(res, r.ok ? 200 : 400, r);
+  }
 
   if (p === "/api/selection" && req.method === "POST") {
     const body = await readBody(req);
@@ -787,6 +961,7 @@ async function main() {
     }
   });
   startWatcher();
+  updates = createUpdates({ version: VERSION, root: path.resolve(HERE, ".."), project: ROOT, port: () => port, log: (m) => console.log(`[loupe] ${m}`), onChange: () => broadcast("version", updates.info()) });
   const stop = () => { writeState({ pid: null }); process.exit(0); };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);

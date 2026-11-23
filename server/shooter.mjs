@@ -174,12 +174,14 @@ export function createShooter({ log = () => {} } = {}) {
   const bumpIdle = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => { if (!active) stop(); }, IDLE_MS); idleTimer.unref?.(); };
   process.on("exit", stop);
 
-  async function shootOnce({ url, device = "desktop", wire = false, extract = null }) {
+  async function shootOnce({ url, device = "desktop", wire = false, extract = null, check = false }) {
     const dev = DEVICES[device] || DEVICES.desktop;
     const b = await getBrowser();
     const { targetId } = await b.call("Target.createTarget", { url: "about:blank" });
     const { sessionId } = await b.call("Target.attachToTarget", { targetId, flatten: true });
     const call = (m, p) => b.call(m, p, sessionId);
+    const errors = [];
+    let offErrors = () => {};
     const waitFor = (method, ms) => new Promise((resolve) => {
       const t = setTimeout(() => { off(); resolve(false); }, ms);
       const off = b.listen((m) => { if (m.sessionId === sessionId && m.method === method) { clearTimeout(t); off(); resolve(true); } });
@@ -187,8 +189,17 @@ export function createShooter({ log = () => {} } = {}) {
     try {
       await call("Page.enable");
       await call("Page.addScriptToEvaluateOnNewDocument", { source: "window.__LOUPE_SHOT__ = true;" });
-      await call("Emulation.setDeviceMetricsOverride", { width: dev.w, height: dev.h, deviceScaleFactor: dev.dpr, mobile: dev.mobile });
+      await call("Emulation.setDeviceMetricsOverride", { width: dev.w, height: dev.h, deviceScaleFactor: check ? 1 : dev.dpr, mobile: dev.mobile });
       if (dev.mobile) await call("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+      // A check also listens for script errors on the page
+      if (check) {
+        await call("Runtime.enable");
+        offErrors = b.listen((m) => {
+          if (m.sessionId !== sessionId || errors.length >= 5) return;
+          if (m.method === "Runtime.exceptionThrown") errors.push(String(m.params?.exceptionDetails?.exception?.description || m.params?.exceptionDetails?.text || "Script error").split("\n")[0].slice(0, 200));
+          if (m.method === "Runtime.consoleAPICalled" && m.params?.type === "error") errors.push((m.params.args || []).map((a) => a.value ?? a.description ?? "").join(" ").split("\n")[0].slice(0, 200));
+        });
+      }
       const loaded = waitFor("Page.loadEventFired", 30_000);
       const nav = await call("Page.navigate", { url });
       if (nav.errorText) throw new Error(`Couldn't load the page (${nav.errorText})`);
@@ -204,6 +215,13 @@ export function createShooter({ log = () => {} } = {}) {
       const prep = helper
         ? await evaluate(`window.__loupeShot.prepare(${JSON.stringify({ wire, minWait: extract ? 500 : 1200 })})`)
         : { h: Math.min(await evaluate("Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"), MAX_PX), sections: [] };
+      if (check) {
+        const issues = helper ? await evaluate("window.__loupeShot.check()") : [];
+        offErrors();
+        const real = errors.filter((e) => e && !/favicon|ResizeObserver loop|\[HMR\]|\[vite\]|Download the React DevTools/i.test(e));
+        if (real.length) issues.push({ kind: "error", message: `${real.length} script error${real.length > 1 ? "s" : ""} on the page`, at: real.map((text) => ({ text })) });
+        return { issues, device };
+      }
       if (extract) {
         // Design context for concepts: the scoped markup, styles, and a picture of it
         if (!helper) throw new Error("The page didn't load Loupe's helper");
@@ -224,6 +242,7 @@ export function createShooter({ log = () => {} } = {}) {
       const shot = await call("Page.captureScreenshot", { format: "webp", quality: 92, clip: { x: 0, y: 0, width: dev.w, height: h, scale }, captureBeyondViewport: false, fromSurface: true });
       return { dataUrl: `data:image/webp;base64,${shot.data}`, w: dev.w, h, sections: prep.sections || [], engine: "browser" };
     } finally {
+      offErrors();
       b.call("Target.closeTarget", { targetId }).catch(() => {});
     }
   }
@@ -243,6 +262,12 @@ export function createShooter({ log = () => {} } = {}) {
     extract: (args) => new Promise((resolve, reject) => {
       if (!exe) return reject(new Error("No Chrome, Edge, Brave or Chromium found"));
       queue.unshift({ args: { ...args, extract: args.scope || {} }, resolve, reject });
+      pump();
+    }),
+    /** Check a page for things that broke: resolves to { issues, device } */
+    check: (args) => new Promise((resolve, reject) => {
+      if (!exe) return reject(new Error("No Chrome, Edge, Brave or Chromium found"));
+      queue.push({ args: { ...args, check: true }, resolve, reject });
       pump();
     }),
     /** Screenshot a page: resolves to { dataUrl, w, h, sections } */

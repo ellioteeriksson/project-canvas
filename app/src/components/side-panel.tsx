@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowCounterClockwise, ChatCircleDots, ChatTeardropText, Check, CheckCircle, CircleNotch, DotsThree, FileText, Globe, MagnifyingGlass,
-  PaperPlaneTilt, PencilSimple, Plus, Robot, ShieldCheck, ShieldSlash, Stop, Terminal, Trash, Warning, X,
+  ListChecks, PaperPlaneTilt, PencilSimple, Plus, Robot, ShieldCheck, ShieldSlash, Stop, Terminal, Trash, Warning, X,
 } from "@phosphor-icons/react";
 import { api, AGENT_EVENT } from "@/lib/api";
 import type { Agent, CanvasComment, ChatConn, ChatState, ManagedSession, Manifest, Selection, TranscriptEvent } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { JobsTab, jobsCount } from "@/components/jobs-tab";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Composer, PermissionCard, PromptItem, StatusDot, STATUS, chatName, liveConns, resolveTarget, AUTO, ChatPicker } from "@/components/prompt-bar";
 
-export type PanelTab = "claude" | "comments";
+export type PanelTab = "claude" | "jobs" | "comments";
 export const PANEL_W = 380;
 
 type Props = {
@@ -25,16 +26,18 @@ type Props = {
 /** The right-hand panel: the full chat with Claude, and the comments pinned on the canvas. */
 export function SidePanel(p: Props) {
   const open = p.comments.filter((c) => c.status !== "resolved").length;
+  const jobs = jobsCount(p.chat);
   return (
-    <aside className="island absolute top-3 right-3 bottom-3 z-30 flex flex-col overflow-hidden" style={{ width: PANEL_W }} aria-label={p.tab === "claude" ? "Chat with Claude" : "Comments"}>
+    <aside className="island absolute top-3 right-3 bottom-3 z-30 flex flex-col overflow-hidden" style={{ width: PANEL_W }} aria-label={p.tab === "claude" ? "Chat with Claude" : p.tab === "jobs" ? "Jobs" : "Comments"}>
       <div className="flex h-[52px] shrink-0 items-center gap-1 border-b px-2">
         <div role="tablist" aria-label="Panel" className="flex items-center gap-0.5 rounded-[10px] bg-segment p-0.5 dark:bg-white/8">
-          {([["claude", "Claude", ChatCircleDots], ["comments", "Comments", ChatTeardropText]] as const).map(([id, label, Icon]) => (
+          {([["claude", "Claude", ChatCircleDots], ["jobs", "Jobs", ListChecks], ["comments", "Comments", ChatTeardropText]] as const).map(([id, label, Icon]) => (
             <button
               key={id} type="button" role="tab" aria-selected={p.tab === id} onClick={() => p.onTab(id)}
               className={cn("flex h-7 items-center gap-1.5 rounded-[8px] px-2.5 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring", p.tab === id ? "bg-background shadow-sm dark:bg-white/14" : "text-muted-foreground hover:text-foreground")}
             >
               <Icon size={14} weight={p.tab === id ? "fill" : "regular"} /> {label}
+              {id === "jobs" && jobs > 0 && <span className="rounded-full bg-[var(--agent)] px-1.5 text-[10.5px] leading-[16px] font-semibold text-white tabular-nums">{jobs}</span>}
               {id === "comments" && open > 0 && <span className="rounded-full bg-scope px-1.5 text-[10.5px] leading-[16px] font-semibold text-white tabular-nums">{open}</span>}
             </button>
           ))}
@@ -47,7 +50,7 @@ export function SidePanel(p: Props) {
           <TooltipContent>Close (⌘J)</TooltipContent>
         </Tooltip>
       </div>
-      {p.tab === "claude" ? <ClaudeTab {...p} /> : <CommentsTab {...p} />}
+      {p.tab === "claude" ? <ClaudeTab {...p} /> : p.tab === "jobs" ? <JobsTab chat={p.chat} managed={p.managed} /> : <CommentsTab {...p} />}
     </aside>
   );
 }

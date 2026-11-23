@@ -5,6 +5,8 @@ import { api } from "@/lib/api";
 import type { Agent, CanvasPrompt, ChatConn, ChatState, ChatStatus, PermissionRequest, Selection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { askToNotify } from "@/lib/notify";
+import { SavedPrompts, VoiceButton } from "@/components/composer-extras";
 import { LiveSteps, StepIcon, currentStep, stepLabel, useElapsed } from "@/components/live-steps";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -55,11 +57,13 @@ export const liveConns = (chat: ChatState) => chat.conns.filter((c) => c.status 
 type ComposerProps = {
   to: string | null; scopeName: string | null; selection: Selection | null; onClearScope: () => void; onConcepts: (id: string) => void;
   picker?: React.ReactNode; tail?: React.ReactNode; working?: boolean; onStop?: () => void; placeholder?: string; className?: string; inputRef?: React.RefObject<HTMLTextAreaElement | null>;
-  onSent?: () => void;
+  onSent?: (prompts: CanvasPrompt[]) => void;
+  /** Several sections at once: one job per section, side by side */
+  batch?: { label: string; items: unknown[]; onClear: () => void } | null;
 };
 
 /** Where you write a prompt: scope, concepts or straight to code, and send. */
-export function Composer({ to, scopeName, selection, onClearScope, onConcepts, picker, tail, working, onStop, placeholder, className, inputRef, onSent }: ComposerProps) {
+export function Composer({ to, scopeName, selection, onClearScope, onConcepts, picker, tail, working, onStop, placeholder, className, inputRef, onSent, batch }: ComposerProps) {
   // Straight to code by default; 4 concepts is for when you want options first
   const [concepts, setConcepts] = useState(() => { try { return localStorage.getItem("loupe-concepts") === "on"; } catch { return false; } });
   const toggleConcepts = () => setConcepts((on) => { try { localStorage.setItem("loupe-concepts", on ? "off" : "on"); } catch {} return !on; });
@@ -75,23 +79,33 @@ export function Composer({ to, scopeName, selection, onClearScope, onConcepts, p
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
-  const submit = async () => {
-    const body = text.trim();
+  const submit = async (given?: string) => {
+    const body = (given ?? text).trim();
     if (!body || !to || sending) return;
+    askToNotify();
     setSending(true);
     setError(null);
+    if (batch) {
+      const r = await api.promptBatch(body, batch.items, to).catch(() => ({ ok: false, error: "The canvas server didn't answer", prompts: undefined }));
+      setSending(false);
+      if (!r.ok) return setError(r.error ?? "Couldn't send the prompt");
+      onSent?.(r.prompts ?? []);
+      setText("");
+      requestAnimationFrame(grow);
+      return;
+    }
     const r = await api.prompt(body, to, concepts ? "concepts" : "direct").catch(() => ({ ok: false, error: "The canvas server didn't answer", prompt: undefined }));
     setSending(false);
     if (!r.ok) return setError(r.error ?? "Couldn't send the prompt");
     if (concepts && r.prompt) onConcepts(r.prompt.id);
-    onSent?.();
+    onSent?.(r.prompt ? [r.prompt] : []);
     setText("");
     requestAnimationFrame(grow);
   };
-  const scopeTip = !selection ? "Click a page on the canvas to narrow the prompt" : selection.kind === "view" ? "Click a section in the page to narrow it further" : "Esc steps back out";
+  const scopeTip = batch ? "One job per section; sections on different pages run side by side. ⇧-click to add or remove sections" : !selection ? "Click a page on the canvas to narrow the prompt" : selection.kind === "view" ? "Click a section in the page to narrow it further" : "Esc steps back out";
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); submit(); }} className={cn("island w-full rounded-[18px] px-3.5 pt-3 pb-2", className)}>
+    <form onSubmit={(e) => { e.preventDefault(); void submit(); }} className={cn("island w-full rounded-[18px] px-3.5 pt-3 pb-2", className)}>
       <textarea
         ref={input}
         rows={1}
@@ -99,7 +113,7 @@ export function Composer({ to, scopeName, selection, onClearScope, onConcepts, p
         disabled={!to}
         onChange={(e) => { setText(e.target.value); grow(); }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void submit(); }
           if (e.key === "Escape") input.current?.blur();
         }}
         placeholder={placeholder ?? (!to ? "Start Claude to prompt from here" : scopeName ? "What should change here?" : "What should change in the project?")}
@@ -109,11 +123,11 @@ export function Composer({ to, scopeName, selection, onClearScope, onConcepts, p
       <div className="flex min-w-0 items-center gap-1">
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className={cn("inline-flex h-7 max-w-[42%] min-w-0 items-center gap-1.5 rounded-full text-xs font-medium", selection ? "bg-scope/12 pr-1 pl-2.5 text-scope" : "bg-segment px-2.5 text-muted-foreground")}>
+            <span className={cn("inline-flex h-7 max-w-[42%] min-w-0 items-center gap-1.5 rounded-full text-xs font-medium", selection || batch ? "bg-scope/12 pr-1 pl-2.5 text-scope" : "bg-segment px-2.5 text-muted-foreground")}>
               <Crosshair size={12} weight="bold" className="shrink-0" />
-              <span className="truncate">{scopeName ?? "Whole project"}</span>
-              {selection && (
-                <button type="button" onClick={onClearScope} aria-label="Clear scope: prompt the whole project" className="grid size-5 shrink-0 place-items-center rounded-full outline-none hover:bg-scope/15 focus-visible:ring-2 focus-visible:ring-ring">
+              <span className="truncate">{batch ? batch.label : scopeName ?? "Whole project"}</span>
+              {(selection || batch) && (
+                <button type="button" onClick={batch ? batch.onClear : onClearScope} aria-label="Clear scope: prompt the whole project" className="grid size-5 shrink-0 place-items-center rounded-full outline-none hover:bg-scope/15 focus-visible:ring-2 focus-visible:ring-ring">
                   <X size={10} weight="bold" />
                 </button>
               )}
@@ -124,7 +138,7 @@ export function Composer({ to, scopeName, selection, onClearScope, onConcepts, p
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
-              type="button" variant="ghost" size="sm" onClick={toggleConcepts} aria-pressed={concepts}
+              type="button" variant="ghost" size="sm" onClick={toggleConcepts} aria-pressed={concepts && !batch} disabled={!!batch}
               className={cn("h-7 shrink-0 gap-1.5 rounded-full px-2.5 text-xs", concepts ? "bg-scope/12 text-scope hover:bg-scope/16 hover:text-scope" : "text-muted-foreground")}
             >
               <SquaresFour size={13} weight={concepts ? "fill" : "regular"} /> 4 concepts
@@ -135,6 +149,11 @@ export function Composer({ to, scopeName, selection, onClearScope, onConcepts, p
         {picker}
         {error && <span className="min-w-0 truncate text-xs text-destructive">{error}</span>}
         <span className="ml-auto" />
+        <SavedPrompts text={text} disabled={!to} onUse={(t, now) => {
+          if (now) { void submit(t); return; }
+          setText(t); setTimeout(() => { grow(); const el = input.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 30);
+        }} />
+        <VoiceButton text={text} setText={(t) => { setText(t); requestAnimationFrame(grow); }} focus={() => input.current?.focus()} disabled={!to} input={input} />
         {tail}
         {working && onStop && !text.trim() ? (
           <Tooltip>

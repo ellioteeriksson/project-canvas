@@ -67,6 +67,8 @@ export type ManagedSession = {
   error: string | null; prompt: string | null; views: string[]; cost: number; queue: number;
   /** Started by Loupe for parallel work; stops by itself after a while with nothing to do */
   auto?: boolean;
+  /** The job it's on, and the ones waiting for it, first goes next */
+  currentPrompt?: string | null; queued?: { promptId: string | null; text: string }[];
 };
 export type TranscriptEvent = { at: number } & (
   | { kind: "started"; resumed: boolean }
@@ -102,9 +104,12 @@ export type PermissionRequest = { request_id: string; conn: string; tool_name: s
 export type ChatState = { conns: ChatConn[]; prompts: CanvasPrompt[]; permissions: PermissionRequest[] };
 export type Concept = { title: string; summary: string; css: string; replace: { selector: string; html: string }[] };
 export type ChangeShot = { before?: string; after?: string; h?: number; w?: number; device?: string };
+export type CheckIssue = { kind: "overflow" | "image" | "contrast" | "error"; message: string; viewId: string; device: "desktop" | "mobile"; new: boolean | null; at?: { selector?: string; text?: string; section?: number | null; ratio?: number }[] };
 export type ChangelogEntry = {
   id: string; at: number; endAt?: number; source: "canvas" | "chat" | "loupe"; prompt: string | null; detail?: string | null;
   scope?: string; mode?: string; promptId?: string; summary: string | null; files: string[]; inProgress?: boolean;
   /** Saved versions of the project before and after this change */
-  before?: string; after?: string; shots?: Record<string, ChangeShot>; undone?: number; kind?: "undo" | "restore"; undoOf?: string;
+  before?: string; after?: string; shots?: Record<string, ChangeShot>; undone?: number; kind?: "undo" | "restore" | "text"; undoOf?: string;
+  /** Loupe's check of the changed pages on desktop and mobile; `new` is false for problems that were there before */
+  check?: { at: number; issues: CheckIssue[] };
 };

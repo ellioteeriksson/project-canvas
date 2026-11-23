@@ -62,6 +62,7 @@ export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, 
   const pub = (s) => ({
     id: s.id, label: s.label, state: s.state, claudeSession: s.claudeSession, startedAt: s.startedAt, error: s.error || null,
     prompt: s.current ? s.current.text : null, views: [...s.views], cost: s.cost, queue: s.queue.length, auto: !!s.auto,
+    currentPrompt: s.current?.promptId || null, queued: s.queue.map((q) => ({ promptId: q.promptId || null, text: q.text })),
   });
   const list = () => [...sessions.values()].map(pub);
   const push = () => broadcast("agents", list());
@@ -348,11 +349,42 @@ export function createAgents({ root, hub, recordActivity, broadcast, serverUrl, 
       }
   }, 60_000).unref?.();
 
+  /** Take a job off a Claude's queue before it starts */
+  function drop(promptId) {
+    for (const s of sessions.values()) {
+      const i = s.queue.findIndex((q) => q.promptId === promptId);
+      if (i >= 0) { s.queue.splice(i, 1); push(); return { ok: true, session: s.id }; }
+    }
+    return { ok: false };
+  }
+  /** Put a Claude's waiting jobs in a new order (prompt ids, first goes next) */
+  function reorder(id, order = []) {
+    const s = sessions.get(id);
+    if (!s) return { ok: false, error: "That Claude has stopped" };
+    const rank = new Map(order.map((pid, i) => [pid, i]));
+    s.queue.sort((a, b) => (rank.get(a.promptId) ?? 1e9) - (rank.get(b.promptId) ?? 1e9));
+    push();
+    return { ok: true };
+  }
+  /** Move a waiting job to another Claude (or to a new one) */
+  function move(promptId, to) {
+    let job = null, from = null;
+    for (const s of sessions.values()) { const i = s.queue.findIndex((q) => q.promptId === promptId); if (i >= 0) { job = s.queue.splice(i, 1)[0]; from = s; break; } }
+    if (!job) return { ok: false, error: "That job has already started" };
+    let target = to ? sessions.get(to) : null;
+    if (!target) { const r = start({ auto: true }); if (!r.ok) { from.queue.unshift(job); return r; } target = sessions.get(r.session.id); }
+    target.queue.push(job);
+    hub.reassign?.(promptId, target.id);
+    pump(target);
+    push();
+    return { ok: true, session: target.id };
+  }
+
   function stopAll() { for (const id of sessions.keys()) stop(id); }
   process.on("exit", () => { for (const s of sessions.values()) try { s.proc.kill("SIGTERM"); } catch {} });
 
   return {
-    available: () => !!exe, binary: exe, list, start, say, interrupt, stop, stopAll, permission, transcript, pick, dispatch,
+    available: () => !!exe, binary: exe, list, start, say, interrupt, stop, stopAll, permission, transcript, pick, dispatch, drop, reorder, move,
     previous: () => saved.filter((x) => x.claudeSession && !sessions.has(x.id)),
     has: (id) => sessions.has(id),
   };

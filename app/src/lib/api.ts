@@ -18,6 +18,8 @@ export const api = {
   renderSnapshot: (b: { viewId: string; device: string; layer: string; at: number }) =>
     fetch("/api/snapshot/render", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.status).catch(() => 0),
   prompt: (text: string, conn?: string | null, mode: "direct" | "concepts" = "direct", selection?: unknown) => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/prompt", { text, conn, mode, ...(selection !== undefined ? { selection } : {}) }),
+  promptBatch: (text: string, items: unknown[], conn?: string | null) => post<{ ok: boolean; error?: string; prompts?: CanvasPrompt[] }>("/api/prompt-batch", { text, items, conn }),
+  textEdit: (body: Record<string, unknown>) => post<{ ok: boolean; error?: string; via?: "file" | "claude"; file?: string; entry?: string; prompt?: CanvasPrompt; reason?: string }>("/api/text-edit", body),
   chooseConcept: (id: string, index: number, comment: string) => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/concepts/choose", { id, index, comment }),
   conceptsAgain: (id: string, comment: string) => post<{ ok: boolean; error?: string; prompt?: CanvasPrompt }>("/api/concepts/again", { id, comment }),
   stopListening: (conn: string) => post("/api/listen/stop", { conn }),
@@ -50,6 +52,9 @@ export const api = {
 };
 
 /** Transcript events of Loupe's own Claude sessions, as they happen */
+export const VERSION_EVENT = "loupe:version";
+/** The newest version news from the server, for views that mount after it arrived */
+export let lastVersion: { version: string; newer: string | null } | null = null;
 export const AGENT_EVENT = "loupe:agent-event";
 
 /** How snapshots are taken: "browser" (sharp screenshots from the server) or "frame" (drawn in the canvas) */
@@ -96,6 +101,7 @@ export function useCanvasData() {
       es.addEventListener("changelog", (e) => setChangelog(JSON.parse((e as MessageEvent).data)));
       es.addEventListener("agents", (e) => setManaged(JSON.parse((e as MessageEvent).data)));
       es.addEventListener("comments", (e) => setComments(JSON.parse((e as MessageEvent).data)));
+      es.addEventListener("version", (e) => { lastVersion = JSON.parse((e as MessageEvent).data); window.dispatchEvent(new CustomEvent(VERSION_EVENT, { detail: lastVersion })); });
       es.addEventListener("agent-event", (e) => window.dispatchEvent(new CustomEvent(AGENT_EVENT, { detail: JSON.parse((e as MessageEvent).data) })));
       es.addEventListener("edited", (e) => {
         const ev: EditEvent = JSON.parse((e as MessageEvent).data);

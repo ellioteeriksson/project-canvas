@@ -16,6 +16,8 @@ const GROUPS: { title: string; items: [string, string[]][] }[] = [
   ] },
   { title: "A page up close", items: [
     ["Prompt about a section", ["Click it"]],
+    ["Add more sections to one prompt", ["⇧", "Click"]],
+    ["Edit text in place", ["Double-click"]],
     ["Previous or next section", ["↑", "↓"]],
     ["Pick a single element", ["⌥", "Click"]],
     ["Use the page as normal", [MOD, "Click"]],
@@ -23,6 +25,7 @@ const GROUPS: { title: string; items: [string, string[]][] }[] = [
   ] },
   { title: "Prompting", items: [
     ["Write a prompt", [MOD, "K"]],
+    ["Talk instead of typing", [MOD, "⇧", "Space"]],
     ["Send", ["Enter"]],
     ["New line", ["⇧", "Enter"]],
     ["Tuck the concepts away", ["Esc"]],
