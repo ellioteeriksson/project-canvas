@@ -375,6 +375,8 @@ async function handle(req, res) {
       root: ROOT, version: VERSION, name: manifest?.project.name, views: manifest?.views.length ?? 0,
       chats: open.length, live: open.some((c) => c.status === "live" || c.status === "listening"),
       working: activityList().length, waiting: chat.permissions.length,
+      // sessions this server runs itself that are mid-task (they'd be cut off if it stopped)
+      managedBusy: claudes.list().filter((x) => x.state === "working" || x.state === "waiting").length,
     });
   }
   if (p === "/api/snapshot" && req.method === "POST") {

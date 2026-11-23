@@ -60,14 +60,15 @@ const fromOldApp = (pid) => /\.app(\.old)?\/Contents\/MacOS\//.test(commandOf(pi
 
 /**
  * Canvases an older Loupe app started keep running from the old app's files and keep reading your
- * project folders, so macOS asks again for access on behalf of that old copy. Stop them once
- * they're idle; they start again from this app when you open them.
+ * project folders. macOS keeps one access answer per app, so the old and new copies take turns
+ * asking for Documents access. Stop them (unless a session Loupe runs in them is mid-task: then
+ * once it's done); a terminal chat connected to one just reconnects to the new canvas.
  */
 async function stopOutdated() {
   if (!process.versions.electron) return;
   for (const p of list()) {
     const up = await running(p.root).catch(() => null);
-    if (!up || up.version === VERSION || up.working || up.waiting) continue;
+    if (!up || up.version === VERSION || up.managedBusy) continue;
     const { pid } = readState(p.root);
     if (pid && fromOldApp(pid)) try { process.kill(pid, "SIGTERM"); } catch {}
   }
@@ -196,7 +197,7 @@ export async function startHub({ port = 4700, spawnServer, env } = {}) {
   const server = createHub({ spawnServer });
   await new Promise((r) => server.listen(p, "127.0.0.1", r));
   setTimeout(() => stopOutdated().catch(() => {}), 3000).unref?.();
-  setInterval(() => stopOutdated().catch(() => {}), 120_000).unref?.();
+  setInterval(() => stopOutdated().catch(() => {}), 30_000).unref?.();
   return { url: `http://localhost:${p}`, server };
 }
 
