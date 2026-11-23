@@ -1,6 +1,6 @@
 {
   "name": "loupe",
-  "version": "0.18.2",
+  "version": "0.18.3",
   "description": "See every page or screen of a project on a live design canvas (sitemap for websites, flow for products), scope Claude's edits to the view you select, browse the design system, and commit, push or open a PR from the top bar.",
   "author": {
     "name": "Elliot Eriksson"

@@ -18,24 +18,24 @@ process.env.PATH = [...new Set([...(process.env.PATH || "").split(":"), "/opt/ho
 /**
  * Apps opened from the Dock don't get what your shell profile sets up (PATH, and things like
  * CLAUDE_CODE_OAUTH_TOKEN or a proxy), so Claude Code started from Loupe could log in differently
- * from Claude Code in your terminal. Read your login shell's environment once, like a terminal would.
+ * from Claude Code in your terminal. Read those from your login shell once, and give them only to
+ * the canvases Loupe starts (not to the app's own windows).
  */
+const SHELL_KEYS = /^(PATH|LANG|LC_[A-Z]+|CLAUDE_[A-Z0-9_]+|ANTHROPIC_[A-Z0-9_]+|AWS_[A-Z0-9_]+|GOOGLE_[A-Z0-9_]+|CLOUD_ML_REGION|VERTEX_[A-Z0-9_]+|DISABLE_[A-Z0-9_]+|NODE_EXTRA_CA_CERTS|SSL_CERT_FILE|SSL_CERT_DIR|REQUESTS_CA_BUNDLE|(HTTPS?|ALL|NO)_PROXY|(https?|all|no)_proxy|NVM_DIR|VOLTA_HOME|PNPM_HOME|BUN_INSTALL)$/;
 function loadShellEnv() {
   return new Promise((resolve) => {
     const shell = process.env.SHELL || "/bin/zsh";
     const MARK = "__LOUPE_ENV_START__";
-    execFile(shell, ["-ilc", `printf '${MARK}'; env -0`], { encoding: "utf8", timeout: 8000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, LOUPE_SHELL_ENV: "1" } }, (err, out) => {
+    const found = {};
+    execFile(shell, ["-ilc", `printf '${MARK}'; env -0`], { encoding: "utf8", timeout: 6000, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
       const i = String(out || "").indexOf(MARK);
       if (i >= 0) {
-        const skip = new Set(["PWD", "OLDPWD", "SHLVL", "_", "TERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "ELECTRON_RUN_AS_NODE", "LOUPE_SHELL_ENV"]);
         for (const kv of out.slice(i + MARK.length).split("\0")) {
           const eq = kv.indexOf("=");
-          if (eq <= 0) continue;
-          const k = kv.slice(0, eq);
-          if (!skip.has(k) && !k.startsWith("npm_")) process.env[k] = kv.slice(eq + 1);
+          if (eq > 0 && SHELL_KEYS.test(kv.slice(0, eq))) found[kv.slice(0, eq)] = kv.slice(eq + 1);
         }
       }
-      resolve();
+      resolve(found);
     });
   });
 }
@@ -271,12 +271,12 @@ function menu() {
 
 app.whenReady().then(async () => {
   menu();
-  await loadShellEnv();
-  // and the usual places, in case the profile doesn't add them
-  process.env.PATH = [...new Set([...(process.env.PATH || "").split(":"), "/opt/homebrew/bin", "/usr/local/bin", `${os.homedir()}/.local/bin`, `${os.homedir()}/.claude/local`, "/usr/bin", "/bin"])].filter(Boolean).join(":");
+  const shellEnv = await loadShellEnv();
+  // plus the usual places, in case the profile doesn't add them
+  shellEnv.PATH = [...new Set([...(shellEnv.PATH || process.env.PATH || "").split(":"), "/opt/homebrew/bin", "/usr/local/bin", `${os.homedir()}/.local/bin`, `${os.homedir()}/.claude/local`, "/usr/bin", "/bin"])].filter(Boolean).join(":");
   const { startHub } = await import(pathToFileURL(path.join(ROOT, "server", "hub.mjs")).href);
   try {
-    hubUrl = (await startHub({ port: 4700 })).url;
+    hubUrl = (await startHub({ port: 4700, env: shellEnv })).url;
   } catch (e) {
     dialog.showErrorBox("Loupe couldn't start", String(e?.message || e));
     app.quit();

@@ -39,8 +39,9 @@ async function running(root) {
   return old && old.root === root ? { url: st.url, version: old.version, chats: 0, live: false, working: 0, waiting: 0 } : null;
 }
 
+let extraEnv = {};
 function defaultSpawn(root) {
-  const env = { ...process.env };
+  const env = { ...process.env, ...extraEnv };
   // Inside the Electron app, run the server with the app's own Node
   if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";
   fs.mkdirSync(path.join(root, ".canvas"), { recursive: true });
@@ -189,7 +190,8 @@ export function freePort(start) {
 }
 
 /** Start the home server; resolves to its URL */
-export async function startHub({ port = 4700, spawnServer } = {}) {
+export async function startHub({ port = 4700, spawnServer, env } = {}) {
+  if (env) extraEnv = env;
   const p = await freePort(port);
   const server = createHub({ spawnServer });
   await new Promise((r) => server.listen(p, "127.0.0.1", r));
